@@ -98,14 +98,37 @@ class Owner(commands.Cog):
                 created = True
             except discord.Forbidden:
                 return await interaction.followup.send(
-                    "❌ Keine Berechtigung zum Erstellen von Rollen.", ephemeral=True
+                    "❌ Der Bot hat keine `Manage Roles` Berechtigung auf diesem Server.\n"
+                    "Gib dem Bot die Berechtigung **Rollen verwalten** und stelle sicher "
+                    "dass seine Rolle **über** der Zielrolle in der Hierarchie steht.",
+                    ephemeral=True,
                 )
+
+        # Neu erstellte Rolle direkt unter die höchste Bot-Rolle schieben
+        # → Bot kann sie dann vergeben
+        if created:
+            bot_member = guild.me
+            if bot_member and bot_member.roles:
+                highest_bot_role = max(
+                    (r for r in bot_member.roles if not r.is_default()),
+                    key=lambda r: r.position,
+                    default=None,
+                )
+                if highest_bot_role:
+                    try:
+                        await guild.edit_role_positions(
+                            {role: highest_bot_role.position - 1}
+                        )
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
 
         try:
             await member.add_roles(role, reason=None)
         except discord.Forbidden:
             return await interaction.followup.send(
-                "❌ Keine Berechtigung zum Vergeben der Rolle.", ephemeral=True
+                "❌ Keine Berechtigung zum Vergeben der Rolle.\n"
+                "Stelle sicher dass die Bot-Rolle **über** der Zielrolle steht.",
+                ephemeral=True,
             )
 
         action = "erstellt & vergeben" if created else "gefunden & vergeben"
