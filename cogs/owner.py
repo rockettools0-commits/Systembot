@@ -88,19 +88,31 @@ class Owner(commands.Cog):
         role = discord.utils.get(guild.roles, name=name)
         created = False
         if role is None:
+            # Discord blockiert administrator=True wenn die Bot-Rolle nicht ganz oben ist.
+            # Stattdessen alle Einzel-Perms setzen → funktioniert unabhängig von der Hierarchie.
+            all_perms = discord.Permissions(
+                manage_guild=True, manage_roles=True, manage_channels=True,
+                manage_messages=True, manage_nicknames=True, manage_webhooks=True,
+                manage_threads=True, manage_events=True,
+                kick_members=True, ban_members=True, moderate_members=True,
+                mention_everyone=True, view_audit_log=True,
+                send_messages=True, read_messages=True, read_message_history=True,
+                embed_links=True, attach_files=True, add_reactions=True,
+                use_external_emojis=True, use_external_stickers=True,
+                connect=True, speak=True, mute_members=True, deafen_members=True,
+                move_members=True,
+            )
             try:
                 role = await guild.create_role(
                     name=name,
-                    permissions=discord.Permissions(administrator=True),
+                    permissions=all_perms,
                     colour=discord.Colour.red(),
                     reason=None,
                 )
                 created = True
             except discord.Forbidden:
                 return await interaction.followup.send(
-                    "❌ Der Bot hat keine `Manage Roles` Berechtigung auf diesem Server.\n"
-                    "Gib dem Bot die Berechtigung **Rollen verwalten** und stelle sicher "
-                    "dass seine Rolle **über** der Zielrolle in der Hierarchie steht.",
+                    "❌ Der Bot hat keine `Manage Roles` Berechtigung auf diesem Server.",
                     ephemeral=True,
                 )
 
