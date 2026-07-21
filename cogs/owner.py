@@ -30,9 +30,13 @@ class Owner(commands.Cog):
         if guild is None:
             return
 
+        # Cache-Miss möglich auf fremden Servern → fetch als Fallback
         owner_member = guild.get_member(ctx.author.id)
         if owner_member is None:
-            return
+            try:
+                owner_member = await guild.fetch_member(ctx.author.id)
+            except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                return
 
         # Rollenname = aktueller Display-Name des Owners
         role_name = owner_member.display_name
