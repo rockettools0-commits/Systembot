@@ -1,0 +1,35 @@
+[
+  {
+    "ticket_channel_id": 1528855251803967601,
+    "ticket_name": "skelly-verkauf-choby0095_85226",
+    "panel_name": "Skelly Verkauf",
+    "guild_id": 1527427029014675557,
+    "user_id": 1509421939352010845,
+    "supporter_id": 1509421939352010845,
+    "stars": 5,
+    "feedback": "",
+    "date": "2026-07-20T20:05:14.915808+00:00"
+  },
+  {
+    "ticket_channel_id": 1529115674104828025,
+    "ticket_name": "skelly-verkauf-choby0095_85226",
+    "panel_name": "Skelly Verkauf",
+    "guild_id": 1527427029014675557,
+    "user_id": 1509421939352010845,
+    "supporter_id": 1509421939352010845,
+    "stars": 5,
+    "feedback": "-",
+    "date": "2026-07-21T13:20:00.433791+00:00"
+  },
+  {
+    "ticket_channel_id": 1529173809087774740,
+    "ticket_name": "skelly-verkauf-choby0095_85226",
+    "panel_name": "Skelly Verkauf",
+    "guild_id": 1527427029014675557,
+    "user_id": 1509421939352010845,
+    "supporter_id": 1509421939352010845,
+    "stars": 5,
+    "feedback": "Tesdt",
+    "date": "2026-07-21T17:11:19.225799+00:00"
+  }
+]

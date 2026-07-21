@@ -1,0 +1,76 @@
+{
+  "panels": {
+    "1527782710691762315": {
+      "channel_id": 1527432654373519513,
+      "message_id": 1527782710691762315,
+      "kategorie_id": 1527435767448866927,
+      "anzeige_name": "Avoke Clan Bewerbung",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527783434787750199": {
+      "channel_id": 1527432654373519513,
+      "message_id": 1527783434787750199,
+      "kategorie_id": 1527435767448866927,
+      "anzeige_name": "Avoke Clan Bewerbung",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527784009864577065": {
+      "channel_id": 1527429181661647048,
+      "message_id": 1527784009864577065,
+      "kategorie_id": 1527437893457547345,
+      "anzeige_name": "Skelly Ankauf",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527784094057107588": {
+      "channel_id": 1527429181661647048,
+      "message_id": 1527784094057107588,
+      "kategorie_id": 1527437893457547345,
+      "anzeige_name": "Skelly Verkauf",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527784427072258201": {
+      "channel_id": 1527429181661647048,
+      "message_id": 1527784427072258201,
+      "kategorie_id": 1527443636059639938,
+      "anzeige_name": "Support",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527784502338785516": {
+      "channel_id": 1527443984383869100,
+      "message_id": 1527784502338785516,
+      "kategorie_id": 1527443636059639938,
+      "anzeige_name": "Support",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=256",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527788095318265896": {
+      "channel_id": 1527787763813060608,
+      "message_id": 1527788095318265896,
+      "kategorie_id": 1527437893457547345,
+      "anzeige_name": "Creeper Verkauf",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=1024",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    },
+    "1527788154860470363": {
+      "channel_id": 1527787763813060608,
+      "message_id": 1527788154860470363,
+      "kategorie_id": 1527437893457547345,
+      "anzeige_name": "Creeper Ankauf",
+      "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=1024",
+      "gesperrte_rolle_id": 1527780664202760398,
+      "log_kanal_id": 1527780866527465564
+    }
+  }
+}

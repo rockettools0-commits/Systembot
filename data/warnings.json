@@ -1,0 +1,24 @@
+{
+  "1527427029014675557": {
+    "1048647374974763038": [
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Verbotenes Wort",
+        "timestamp": "2026-07-17T21:28:11.350623+00:00"
+      },
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Verbotenes Wort",
+        "timestamp": "2026-07-17T21:29:46.177101+00:00"
+      },
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Verbotener Datei-Typ (`.zip`)",
+        "timestamp": "2026-07-17T22:24:36.222901+00:00"
+      }
+    ]
+  }
+}
