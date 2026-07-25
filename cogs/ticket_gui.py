@@ -519,26 +519,9 @@ def _main_menu_embed(panel_count: int, guild=None) -> discord.Embed:
     return embed
 
 
-class TicketGui(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    @app_commands.command(name="ticket-gui", description="Öffnet die Ticket-GUI zur Verwaltung aller Panels (Admin).")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def ticket_gui_slash(self, interaction: discord.Interaction):
-        panels = await _get_panels()
-        await interaction.response.send_message(
-            embed=_main_menu_embed(len(panels), interaction.guild), view=TicketGuiMainView(), ephemeral=True
-        )
-
-    @ticket_gui_slash.error
-    async def ticket_gui_slash_error(self, interaction: discord.Interaction, error):
-        if isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                embed=error_embed("❌ Keine Berechtigung", "Du benötigst Administrator-Rechte für diesen Befehl."),
-                ephemeral=True,
-            )
-
+# TicketGui Cog wurde entfernt — /ticket gui läuft jetzt als Subcommand
+# im /ticket-Gruppe in cogs/tickets.py, damit Discord keine zwei
+# konkurrierende "ticket"-Einträge im Command-Tree hat.
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(TicketGui(bot))
+    pass  # Views + Helpers werden von cogs/tickets.py importiert

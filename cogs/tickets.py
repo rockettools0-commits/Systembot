@@ -1,5 +1,5 @@
 """
-Multi-Ticket-System für AVOKE.
+Multi-Ticket-System für TRPC.
 Erlaubt beliebig viele Ticket-Panels (Support, Allianz, Trading, ...),
 jeweils mit eigener Zielkategorie, Anzeigename, Bild und gesperrter Rolle.
 Transkript wird als HTML + TXT per DM und in den Log-Kanal gesendet.
@@ -16,8 +16,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from utils.storage import JSONStore
-from utils.system_state import get_maintenance_state
-from utils.theme import get_footer_text
 
 CONFIG_PATH       = "data/tickets_config.json"
 OPEN_TICKETS_PATH = "data/tickets_open.json"
@@ -143,7 +141,7 @@ def _build_html_transcript(
 <div class="messages">
 {rows_html}
 </div>
-<div class="footer">Erstellt von <span>AVOKE | System</span> &mdash; {esc(closed_str)} UTC</div>
+<div class="footer">Erstellt von <span>{esc(panel_name)}</span> &mdash; {esc(closed_str)} UTC</div>
 </body>
 </html>"""
 
@@ -191,6 +189,9 @@ class Tickets(commands.Cog):
         self.config_store = JSONStore(CONFIG_PATH, default_config())
         self.open_store = JSONStore(OPEN_TICKETS_PATH, default_open_tickets())
 
+    # ── /ticket Gruppe ────────────────────────────────────────────────────────
+    ticket = app_commands.Group(name="ticket", description="Ticket-Verwaltung.")
+
     async def cog_load(self):
         # Persistente Views registrieren, damit Buttons nach Bot-Neustart weiter funktionieren.
         self.bot.add_view(TicketCloseView())
@@ -200,8 +201,8 @@ class Tickets(commands.Cog):
 
     # ---------- Slash Commands ----------
 
-    @app_commands.command(
-        name="ticket-setup",
+    @ticket.command(
+        name="setup",
         description="Erstellt ein neues Ticket-Panel für einen bestimmten Bereich.",
     )
     @app_commands.describe(
@@ -211,6 +212,11 @@ class Tickets(commands.Cog):
         bild_url="URL des Thumbnails für das Embed",
         gesperrte_rolle="Rolle, die KEINE Tickets in diesem System öffnen darf",
         log_kanal="Kanal, in den Transkripte beim Schließen gesendet werden",
+        support_rolle_1="Support-Rolle 1 — erhält Zugriff auf jedes Ticket und wird gepingt",
+        support_rolle_2="Support-Rolle 2 (optional)",
+        support_rolle_3="Support-Rolle 3 (optional)",
+        support_rolle_4="Support-Rolle 4 (optional)",
+        support_rolle_5="Support-Rolle 5 (optional)",
     )
     @app_commands.checks.has_permissions(administrator=True)
     async def ticket_setup(
@@ -222,6 +228,11 @@ class Tickets(commands.Cog):
         bild_url: str,
         gesperrte_rolle: discord.Role,
         log_kanal: discord.TextChannel,
+        support_rolle_1: discord.Role = None,
+        support_rolle_2: discord.Role = None,
+        support_rolle_3: discord.Role = None,
+        support_rolle_4: discord.Role = None,
+        support_rolle_5: discord.Role = None,
     ):
         await interaction.response.defer(ephemeral=True)
 
@@ -240,6 +251,13 @@ class Tickets(commands.Cog):
             )
             return
 
+        # Support-Rollen-IDs sammeln (None-Werte herausfiltern)
+        support_role_ids = [
+            r.id for r in (support_rolle_1, support_rolle_2, support_rolle_3,
+                           support_rolle_4, support_rolle_5)
+            if r is not None
+        ]
+
         embed = discord.Embed(
             title=f"🎫  {anzeige_name}",
             description=(
@@ -251,7 +269,7 @@ class Tickets(commands.Cog):
         )
         if bild_url and bild_url.startswith("http"):
             embed.set_thumbnail(url=bild_url)
-        embed.set_footer(text=f"{get_footer_text(interaction)}  ·  Ticket-System")
+        embed.set_footer(text=f"{interaction.guild.name} │ Ticket-System")
 
         try:
             sent_message = await kanal.send(embed=embed)
@@ -273,6 +291,9 @@ class Tickets(commands.Cog):
             "bild_url": bild_url,
             "gesperrte_rolle_id": gesperrte_rolle.id,
             "log_kanal_id": log_kanal.id,
+            "support_role_ids": support_role_ids,
+            "ticket_message": "",
+            "rating_log_kanal_id": log_kanal.id,
         }
 
         def mutate(data):
@@ -285,13 +306,69 @@ class Tickets(commands.Cog):
         self.bot.add_view(view)
         await sent_message.edit(view=view)
 
+        role_info = ""
+        if support_role_ids:
+            mentions = " ".join(f"<@&{rid}>" for rid in support_role_ids)
+            role_info = f"\n🛠️ Support-Rollen: {mentions}"
         await interaction.followup.send(
-            f"✅ Ticket-Panel **{anzeige_name}** wurde in {kanal.mention} erstellt.",
+            f"✅ Ticket-Panel **{anzeige_name}** wurde in {kanal.mention} erstellt.{role_info}",
             ephemeral=True,
         )
 
-    @ticket_setup.error
-    async def ticket_setup_error(self, interaction: discord.Interaction, error):
+    # ---------- /ticket info ----------
+
+    @ticket.command(name="info", description="Zeigt alle offenen Tickets des Servers (Admin).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def ticket_info(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        open_tickets = await self.open_store.read()
+        config       = await self.config_store.read()
+        guild        = interaction.guild
+
+        guild_tickets = {
+            ch_id: info for ch_id, info in open_tickets.items()
+            if guild.get_channel(int(ch_id)) is not None
+        }
+
+        embed = discord.Embed(
+            title=f"🎫 Offene Tickets — {guild.name}",
+            color=discord.Color.from_rgb(88, 101, 242),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_footer(text=f"{guild.name} │ Ticket-System")
+
+        if not guild_tickets:
+            embed.description = "Derzeit sind keine offenen Tickets vorhanden."
+        else:
+            lines = []
+            for ch_id, info in list(guild_tickets.items())[:20]:
+                channel  = guild.get_channel(int(ch_id))
+                ch_text  = channel.mention if channel else f"`#{ch_id}`"
+                user     = guild.get_member(info.get("user_id", 0))
+                user_str = user.mention if user else f"<@{info.get('user_id', '?')}>"
+                panel    = info.get("anzeige_name", "?")
+                created  = info.get("created_at", "")[:10]
+                lines.append(f"{ch_text} — {user_str} — **{panel}** — {created}")
+            embed.description = "\n".join(lines)
+            embed.add_field(name="📊 Gesamt offen", value=str(len(guild_tickets)), inline=True)
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # ---------- /ticket gui ----------
+
+    @ticket.command(name="gui", description="Öffnet die Ticket-GUI zur Verwaltung aller Panels (Admin).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def ticket_gui(self, interaction: discord.Interaction):
+        # Lazy import bricht den zirkulären ticket_gui → tickets Import
+        from cogs.ticket_gui import _get_panels, _main_menu_embed, TicketGuiMainView
+        panels = await _get_panels()
+        await interaction.response.send_message(
+            embed=_main_menu_embed(len(panels), interaction.guild),
+            view=TicketGuiMainView(),
+            ephemeral=True,
+        )
+
+    async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message(
                 "❌ Du benötigst Administrator-Rechte für diesen Befehl.", ephemeral=True
@@ -305,13 +382,6 @@ class Tickets(commands.Cog):
     # ---------- Button-Handler ----------
 
     async def handle_ticket_open(self, interaction: discord.Interaction, panel_id: str):
-        maintenance = await get_maintenance_state()
-        if maintenance["maintenance"]:
-            await interaction.response.send_message(
-                maintenance["message"] or "Das Ticket-System befindet sich momentan in Wartung.",
-                ephemeral=True,
-            )
-            return
         config = await self.config_store.read()
         panel = config.get("panels", {}).get(panel_id)
 
@@ -356,6 +426,13 @@ class Tickets(commands.Cog):
         safe_name = panel["anzeige_name"].lower().replace(" ", "-")
         channel_name = f"{safe_name}-{member.name}"[:95]
 
+        # Support-Rollen aus Panel-Config auflösen
+        support_role_ids: list[int] = panel.get("support_role_ids") or []
+        support_roles: list[discord.Role] = [
+            r for rid in support_role_ids
+            if (r := guild.get_role(rid)) is not None
+        ]
+
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             member: discord.PermissionOverwrite(
@@ -365,14 +442,11 @@ class Tickets(commands.Cog):
                 view_channel=True, send_messages=True, manage_channels=True, read_message_history=True
             ),
         }
-
-        # Supportrollen (über die Ticket-GUI konfigurierbar) erhalten automatisch Zugriff
-        for role_id in panel.get("support_role_ids", []):
-            support_role = guild.get_role(role_id)
-            if support_role is not None:
-                overwrites[support_role] = discord.PermissionOverwrite(
-                    view_channel=True, send_messages=True, read_message_history=True, attach_files=True
-                )
+        # Support-Rollen: Lesezugriff + Schreiben im Ticket-Kanal
+        for role in support_roles:
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True, read_message_history=True, attach_files=True
+            )
 
         try:
             ticket_channel = await guild.create_text_channel(
@@ -390,31 +464,37 @@ class Tickets(commands.Cog):
             await interaction.followup.send(f"❌ Fehler beim Erstellen des Kanals: {e}", ephemeral=True)
             return
 
-        # Individuelle Ticketnachricht (Ticket-GUI) oder Standardtext, falls keine gesetzt ist
-        custom_message = panel.get("ticket_message")
-        if custom_message:
-            description = f"{member.mention}\n\n{custom_message}\n\n🔒 Nutze den Button unten um das Ticket zu schließen."
-        else:
-            description = (
+        embed = discord.Embed(
+            title=f"🎫  {panel['anzeige_name']}",
+            description=(
                 f"Willkommen {member.mention}!\n\n"
                 f"Beschreibe dein Anliegen so genau wie möglich.\n"
                 f"Ein Teammitglied wird sich bald um dich kümmern.\n\n"
                 f"🔒 Nutze den Button unten um das Ticket zu schließen."
-            )
-
-        embed = discord.Embed(
-            title=f"🎫  {panel['anzeige_name']}",
-            description=description,
+            ),
             color=discord.Color.from_rgb(88, 101, 242),
             timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
-        embed.set_footer(text=f"{get_footer_text(interaction)}  ·  Ticket-System")
+        embed.set_footer(text=f"{interaction.guild.name} │ Ticket-System")
         bild = panel.get("bild_url", "")
         if bild and bild.startswith("http"):
             embed.set_thumbnail(url=bild)
+        if support_roles:
+            embed.add_field(
+                name="🛠️ Support-Team",
+                value=" ".join(r.mention for r in support_roles),
+                inline=False,
+            )
+
+        # Ping-Content: User + alle Support-Rollen
+        ping_parts = [member.mention] + [r.mention for r in support_roles]
+        ping_content = " ".join(ping_parts)
 
         await ticket_channel.send(
-            content=member.mention, embed=embed, view=TicketCloseView()
+            content=ping_content,
+            embed=embed,
+            view=TicketCloseView(),
+            allowed_mentions=discord.AllowedMentions(users=True, roles=True),
         )
 
         def mutate(data):
@@ -423,8 +503,7 @@ class Tickets(commands.Cog):
                 "panel_id": panel_id,
                 "anzeige_name": panel["anzeige_name"],
                 "log_kanal_id": panel["log_kanal_id"],
-                # Bewertungs-Log: eigener Kanal (Ticket-GUI) oder Fallback auf Ticket-Log
-                "rating_log_kanal_id": panel.get("rating_log_kanal_id", panel["log_kanal_id"]),
+                "support_role_ids": support_role_ids,
                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
             return data
@@ -465,7 +544,7 @@ class Tickets(commands.Cog):
         # ── TXT-Transkript ────────────────────────────────────────────────────
         txt_lines = [
             "=" * 60,
-            "  AVOKE | System — Ticket-Transkript",
+            f"  {interaction.guild.name} — Ticket-Transkript",
             "=" * 60,
             f"  Panel      : {panel_name}",
             f"  Kanal      : #{channel.name}",
@@ -509,7 +588,14 @@ class Tickets(commands.Cog):
                 log_embed.add_field(name="👤 Ersteller",       value=f"<@{info.get('user_id')}>",        inline=True)
                 log_embed.add_field(name="🛡️ Geschlossen von", value=interaction.user.mention,           inline=True)
                 log_embed.add_field(name="🕐 Zeitpunkt",       value=f"<t:{int(closed_at.timestamp())}:F>", inline=True)
-                log_embed.set_footer(text=f"{get_footer_text(interaction)}  ·  Ticket-System")
+                _sup_ids = info.get("support_role_ids") or []
+                if _sup_ids:
+                    log_embed.add_field(
+                        name="🛠️ Support-Rollen",
+                        value=" ".join(f"<@&{rid}>" for rid in _sup_ids),
+                        inline=False,
+                    )
+                log_embed.set_footer(text=f"{interaction.guild.name} │ Ticket-System")
                 await log_kanal.send(
                     embed=log_embed,
                     files=[
@@ -536,7 +622,7 @@ class Tickets(commands.Cog):
             dm_embed.add_field(name="📋 Panel",           value=panel_name,                             inline=True)
             dm_embed.add_field(name="🛡️ Geschlossen von", value=str(interaction.user),                  inline=True)
             dm_embed.add_field(name="🕐 Zeitpunkt",       value=f"<t:{int(closed_at.timestamp())}:F>",  inline=False)
-            dm_embed.set_footer(text=get_footer_text(interaction))
+            dm_embed.set_footer(text=f"{interaction.guild.name} │ System")
             if interaction.guild.icon:
                 dm_embed.set_thumbnail(url=interaction.guild.icon.url)
             try:
@@ -556,24 +642,6 @@ class Tickets(commands.Cog):
             return data
 
         await self.open_store.update(mutate)
-
-        # ── Ticketbewertung anfragen (per DM an den Ticket-Ersteller) ────────
-        ratings_cog = self.bot.get_cog("Ratings")
-        if ratings_cog is not None:
-            try:
-                await ratings_cog.request_rating(
-                    guild=interaction.guild,
-                    user_id=info.get("user_id"),
-                    supporter_id=interaction.user.id,
-                    ticket_channel_id=channel.id,
-                    ticket_name=channel.name,
-                    panel_name=panel_name,
-                    rating_log_channel_id=info.get("rating_log_kanal_id", info.get("log_kanal_id")),
-                )
-            except Exception:
-                # Bewertung ist ein "Nice-to-have" — darf das Schließen des Tickets nie verhindern
-                pass
-
         asyncio.create_task(self._delete_channel_after(channel, interaction.user))
 
     async def _delete_channel_after(self, channel: discord.TextChannel, closer: discord.Member):
