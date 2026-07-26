@@ -101,6 +101,7 @@ class AVOKEBot(commands.Bot):
             "cogs.changelog",     # !changelog: Ueberblick ueber Neuerungen
             "cogs.system_tools",  # !system: Wartung, Health-Check und Backups
             "cogs.owner_panel",   # /owner-*: vollständiges Owner Slash-Panel
+            "cogs.mc_verify",     # /mc verify/status/unlink/whois/list
         ]
         for cog in cogs:
             try:
