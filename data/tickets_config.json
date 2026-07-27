@@ -71,6 +71,68 @@
       "bild_url": "https://cdn.discordapp.com/avatars/963729263465472000/9de856fd578a7372b94e37a5938bdd89.png?size=1024",
       "gesperrte_rolle_id": 1527780664202760398,
       "log_kanal_id": 1527780866527465564
+    },
+    "1531035576286052367": {
+      "channel_id": 1517160081098149989,
+      "message_id": 1531035576286052367,
+      "kategorie_id": 1531035292386197564,
+      "anzeige_name": "Support",
+      "bild_url": "https://cdn.discordapp.com/icons/1507493310690889758/94969965a9abd8a6ed498ae5be40de15.png?size=1024",
+      "gesperrte_rolle_id": 1529265100924391686,
+      "log_kanal_id": 1529264378657116301,
+      "support_role_ids": [],
+      "ticket_message": "",
+      "rating_log_kanal_id": 1529264378657116301
+    },
+    "1531035848815149209": {
+      "channel_id": 1530166279179341834,
+      "message_id": 1531035848815149209,
+      "kategorie_id": 1531035107320795197,
+      "anzeige_name": "Spawner",
+      "bild_url": "https://cdn.discordapp.com/icons/1507493310690889758/94969965a9abd8a6ed498ae5be40de15.png?size=1024",
+      "gesperrte_rolle_id": 1529265100924391686,
+      "log_kanal_id": 1529264378657116301,
+      "support_role_ids": [
+        1516896489618673884,
+        1517177321306718371
+      ],
+      "ticket_message": "",
+      "rating_log_kanal_id": 1529264378657116301
+    },
+    "1531036109432164514": {
+      "channel_id": 1529266539453349897,
+      "message_id": 1531036109432164514,
+      "kategorie_id": 1531035360107298886,
+      "anzeige_name": "Clan Join",
+      "bild_url": "https://cdn.discordapp.com/icons/1507493310690889758/94969965a9abd8a6ed498ae5be40de15.png?size=1024",
+      "gesperrte_rolle_id": 1529265100924391686,
+      "log_kanal_id": 1529264378657116301,
+      "support_role_ids": [
+        1516896489618673884,
+        1517177321306718371,
+        1529263973134766080,
+        1516896162651836436
+      ],
+      "ticket_message": "",
+      "rating_log_kanal_id": 1529264378657116301
+    },
+    "1531036343688237109": {
+      "channel_id": 1517160081098149989,
+      "message_id": 1531036343688237109,
+      "kategorie_id": 1531035292386197564,
+      "anzeige_name": "Support",
+      "bild_url": "https://cdn.discordapp.com/icons/1507493310690889758/94969965a9abd8a6ed498ae5be40de15.png?size=1024",
+      "gesperrte_rolle_id": 1529265100924391686,
+      "log_kanal_id": 1529264378657116301,
+      "support_role_ids": [
+        1516896489618673884,
+        1517177321306718371,
+        1529263973134766080,
+        1516896162651836436,
+        1529249935571292322
+      ],
+      "ticket_message": "",
+      "rating_log_kanal_id": 1529264378657116301
     }
   }
 }

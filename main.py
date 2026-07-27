@@ -79,6 +79,7 @@ class AVOKEBot(commands.Bot):
             "cogs.coords",
             "cogs.roles",
             "cogs.moderation",
+            "cogs.security",          # Enterprise Security: Risikoanalyse, Audit-Logs, Trusted-Listen
             "cogs.logging_cog",
             "cogs.giveaways",
             "cogs.rank",
@@ -145,6 +146,41 @@ class AVOKEBot(commands.Bot):
 
 
 bot = AVOKEBot()
+
+
+@bot.tree.error
+async def on_app_command_error(
+    interaction: discord.Interaction,
+    error: discord.app_commands.AppCommandError,
+):
+    """Einheitliche, hilfreiche Rückmeldung für nicht lokal behandelte Slash-Fehler."""
+    original = getattr(error, "original", error)
+    if isinstance(error, discord.app_commands.MissingPermissions):
+        text = "Dir fehlen die nötigen Server-Berechtigungen für diesen Befehl."
+    elif isinstance(error, discord.app_commands.BotMissingPermissions):
+        text = "Mir fehlen dafür Berechtigungen. Bitte prüfe meine Rollenrechte."
+    elif isinstance(error, discord.app_commands.CommandOnCooldown):
+        text = f"Bitte warte noch {error.retry_after:.0f} Sekunden."
+    elif isinstance(error, discord.app_commands.CheckFailure):
+        text = "Du darfst diesen Befehl nicht verwenden."
+    else:
+        log_command.exception("Slash-Command-Fehler: %s", original)
+        text = "Beim Ausführen ist etwas schiefgelaufen. Das Team wurde informiert."
+
+    embed = discord.Embed(
+        title="❌ Das hat nicht geklappt",
+        description=text,
+        color=discord.Color.from_rgb(235, 77, 75),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_footer(text="AVOKE │ System")
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+    except discord.HTTPException:
+        pass
 
 
 @bot.event

@@ -87,9 +87,10 @@ class ServerTools(commands.Cog):
             else discord.Color.from_rgb(235, 77, 75)
         )
 
+        guild_name = interaction.guild.name if interaction.guild else "System"
         embed = discord.Embed(
             title=f"🤖  {bot.user.name}",
-            description="AVOKE Elite Clan-Bot",
+            description=f"{guild_name} — Bot-System",
             color=ping_color,
             timestamp=datetime.datetime.now(datetime.timezone.utc),
         )

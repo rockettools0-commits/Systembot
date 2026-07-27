@@ -24,7 +24,7 @@ from utils.storage import JSONStore
 from utils.permissions import save_group_roles
 from utils.theme import (
     success_embed, error_embed, info_embed, warning_embed,
-    COLOR_PRIMARY, COLOR_INFO, COLOR_GOLD, COLOR_WARNING, FOOTER_TEXT, get_footer_text,
+    COLOR_PRIMARY, COLOR_INFO, COLOR_GOLD, COLOR_WARNING, FOOTER_TEXT,
 )
 
 # ── Pfade (identisch zu den jeweiligen Cogs) ──────────────────────────────────
@@ -37,7 +37,7 @@ ROLES_CONFIG_PATH   = "data/roles_config.json"
 
 # Berechtigungs-Gruppen: (key, label, beschreibung)
 PERM_GROUPS = [
-    ("moderation", "🛡️ Moderation",  "ban, kick, mute, timeout, warn, lockdown, say, announce, lock, unlock, automod-*, giveaway-*, admin-log-set, autorole-set, bot-status, stream-*"),
+    ("moderation", "🛡️ Moderation",  "ban, kick, mute, timeout, warn, lockdown, say, announce, lock, unlock, automod-*, mod *, giveaway-*, admin-log-set, autorole-set, bot-status, stream-*"),
     ("utility",    "🔧 Utility",      "clear, slowmode, nick, addxp, removexp, setxp, resetxp"),
     ("promotion",  "⬆️ Promotion",    "promote, demote"),
     ("clan",       "📋 Clan-Aktionen", "uprank, derank, clan-kick"),
@@ -55,7 +55,7 @@ STEPS = [
 ]
 
 
-def _step_embed(step_index: int, total: int, guild=None) -> discord.Embed:
+def _step_embed(step_index: int, total: int) -> discord.Embed:
     key, label, emoji, color, desc = STEPS[step_index]
     embed = discord.Embed(
         title=f"{emoji}  Setup — {label}",
@@ -63,11 +63,11 @@ def _step_embed(step_index: int, total: int, guild=None) -> discord.Embed:
         color=color,
         timestamp=datetime.datetime.now(datetime.timezone.utc),
     )
-    embed.set_footer(text=f"{get_footer_text(guild)}  ·  Schritt {step_index + 1} / {total}")
+    embed.set_footer(text=f"Setup  ·  Schritt {step_index + 1} / {total}")
     return embed
 
 
-def _summary_embed(results: dict, guild=None) -> discord.Embed:
+def _summary_embed(results: dict) -> discord.Embed:
     """Baut die finale Zusammenfassungs-Embed."""
     embed = discord.Embed(
         title="✅ Setup abgeschlossen",
@@ -109,7 +109,7 @@ def _summary_embed(results: dict, guild=None) -> discord.Embed:
             value="\n".join(f"• {s}" for s in skipped),
             inline=False,
         )
-    embed.set_footer(text=f"{get_footer_text(guild)}  ·  Setup abgeschlossen")
+    embed.set_footer(text="Setup abgeschlossen")
     return embed
 
 
@@ -348,7 +348,7 @@ class SetupWizard:
         self.step_index: int = 0
 
     async def start(self, interaction: discord.Interaction) -> None:
-        embed = _step_embed(0, len(STEPS), self.guild)
+        embed = _step_embed(0, len(STEPS))
         view  = self._view_for_step(0)
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -357,14 +357,14 @@ class SetupWizard:
         if self.step_index >= len(STEPS):
             # Alle Schritte durch → Zusammenfassung
             await interaction.response.edit_message(
-                embed=_summary_embed(self.results, self.guild),
+                embed=_summary_embed(self.results),
                 view=None,
             )
             # Wizard aus der aktiven Liste entfernen
             self.cog._active_wizards.pop(interaction.user.id, None)
             return
 
-        embed = _step_embed(self.step_index, len(STEPS), self.guild)
+        embed = _step_embed(self.step_index, len(STEPS))
         view  = self._view_for_step(self.step_index)
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -422,7 +422,7 @@ class SetupWizard:
                     color=discord.Color.from_rgb(155, 89, 182),
                 )
                 embed.add_field(name="Vergebe Rolle", value=rolle.mention, inline=False)
-                embed.set_footer(text=get_footer_text(interaction))
+                embed.set_footer(text=f"{interaction.guild.name} │ System" if interaction.guild else FOOTER_TEXT)
                 msg = await kanal.send(embed=embed, view=VerifyButton())
                 def mutate(data):
                     data[gid] = {"role_id": rolle.id, "message_id": msg.id, "channel_id": kanal.id}
@@ -529,7 +529,7 @@ class SetupPermsView(discord.ui.View):
             )
             step_total = len(STEPS)
             step_nr    = next(i for i, s in enumerate(STEPS) if s[0] == "perms") + 1
-            embed.set_footer(text=f"{get_footer_text(interaction)}  ·  Schritt {step_nr} / {step_total}")
+            embed.set_footer(text=f"Setup  ·  Schritt {step_nr} / {step_total}")
             await interaction.response.edit_message(
                 embed=embed,
                 view=SetupPermsView(self.wizard, next_idx),
@@ -551,7 +551,7 @@ class SetupPermsView(discord.ui.View):
             )
             step_total = len(STEPS)
             step_nr    = next(i for i, s in enumerate(STEPS) if s[0] == "perms") + 1
-            embed.set_footer(text=f"{get_footer_text(interaction)}  ·  Schritt {step_nr} / {step_total}")
+            embed.set_footer(text=f"Setup  ·  Schritt {step_nr} / {step_total}")
             await interaction.response.edit_message(
                 embed=embed,
                 view=SetupPermsView(self.wizard, next_idx),

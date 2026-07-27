@@ -245,11 +245,24 @@ def _build_category_embed(category: tuple, guild=None) -> discord.Embed:
         description=f"*{desc}*",
         color=color,
     )
-    # Commands als kompakte, gut lesbare Liste
-    cmd_lines = "\n".join(
-        f"╴ `{cmd}`\n  ↳ {cdesc}" for cmd, cdesc in cmds
-    )
-    embed.add_field(name="📌 Befehle", value=cmd_lines, inline=False)
+    # Discord erlaubt höchstens 1.024 Zeichen pro Feld. Kategorien wie
+    # Moderation enthalten deutlich mehr Befehle, daher sauber aufteilen.
+    chunks: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for cmd, cdesc in cmds:
+        line = f"╴ `{cmd}`\n  ↳ {cdesc}"
+        if current and current_length + len(line) + 1 > 1000:
+            chunks.append("\n".join(current))
+            current, current_length = [], 0
+        current.append(line)
+        current_length += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+
+    for index, chunk in enumerate(chunks, start=1):
+        suffix = f" ({index}/{len(chunks)})" if len(chunks) > 1 else ""
+        embed.add_field(name=f"📌 Befehle{suffix}", value=chunk, inline=False)
     embed.set_footer(text=get_footer_text(guild))
     return embed
 
@@ -259,8 +272,9 @@ def _build_home_embed(bot_user: discord.ClientUser, guild=None) -> discord.Embed
     cat_lines = "  ".join(
         f"{emoji} **{label}**" for label, emoji, *_ in HELP_CATEGORIES
     )
+    server_name = guild.name if guild else "Bot"
     embed = discord.Embed(
-        title="📖  AVOKE Bot — Hilfe",
+        title=f"📖  {server_name} — Hilfe",
         description=(
             "Wähle eine Kategorie aus dem Dropdown-Menü um alle verfügbaren Befehle zu sehen.\n\n"
             f"{cat_lines}"
@@ -303,11 +317,22 @@ class HelpSelect(discord.ui.Select):
 class HelpView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=180)
+        self.message: discord.InteractionMessage | None = None
         self.add_item(HelpSelect())
+
+    @discord.ui.button(label="Startseite", emoji="🏠", style=discord.ButtonStyle.secondary, row=1)
+    async def home(self, interaction: discord.Interaction, button: discord.ui.Button):
+        embed = _build_home_embed(interaction.client.user, interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def on_timeout(self):
         for item in self.children:
             item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
 
 
 class HelpMenu(commands.Cog):
@@ -317,7 +342,9 @@ class HelpMenu(commands.Cog):
     @app_commands.command(name="help", description="Öffnet das interaktive Hilfe-Menü.")
     async def help_cmd(self, interaction: discord.Interaction):
         embed = _build_home_embed(self.bot.user, interaction.guild)
-        await interaction.response.send_message(embed=embed, view=HelpView(), ephemeral=True)
+        view = HelpView()
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        view.message = await interaction.original_response()
 
 
 async def setup(bot: commands.Bot):

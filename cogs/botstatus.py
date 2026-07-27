@@ -20,7 +20,7 @@ import datetime
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils.storage import JSONStore
 from utils.theme import success_embed, error_embed, info_embed, warning_embed, FOOTER_TEXT, get_footer_text
@@ -70,24 +70,113 @@ def default_streamer_state() -> dict:
     return {}
 
 
+# Dauer in Sekunden nach einem manuellen /bot-status Aufruf
+# bevor die automatische Rotation wieder einsetzt.
+MANUAL_PAUSE_SECONDS = 600   # 10 Minuten
+
+
 class BotStatus(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot    = bot
         self.config = JSONStore(STREAMER_CONFIG_PATH, default_streamer_config())
         self.state  = JSONStore(STREAMER_STATE_PATH,  default_streamer_state())
 
+        self._rotate_index: int = 0
+        # Zeitstempel des letzten manuellen /bot-status — None = Rotation läuft
+        self._manual_until: datetime.datetime | None = None
+
     stream = app_commands.Group(name="stream", description="Streamer-Ankündigungs-System.")
 
+    async def cog_load(self):
+        self.rotate_status.start()
+
+    def cog_unload(self):
+        self.rotate_status.cancel()
+
     # ─────────────────────────────────────────────────────────────────────────
-    # /bot-status  (bleibt flat — eigenständige Funktion)
+    # Automatische Status-Rotation
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @tasks.loop(seconds=30)
+    async def rotate_status(self):
+        # Pausiert wenn manueller Status aktiv ist
+        if self._manual_until and datetime.datetime.now(datetime.timezone.utc) < self._manual_until:
+            return
+        self._manual_until = None   # Pause abgelaufen → Rotation wieder aktiv
+
+        # Wartungsmodus → Status nicht überschreiben
+        state = await get_maintenance_state()
+        if state.get("maintenance"):
+            return
+
+        slides = await self._build_slides()
+        if not slides:
+            return
+
+        typ, text = slides[self._rotate_index % len(slides)]
+        self._rotate_index += 1
+
+        try:
+            await self.bot.change_presence(
+                activity=discord.Activity(type=typ, name=text)
+            )
+        except Exception:
+            pass
+
+    @rotate_status.before_loop
+    async def before_rotate(self):
+        await self.bot.wait_until_ready()
+
+    async def _build_slides(self) -> list[tuple[discord.ActivityType, str]]:
+        """Baut die Liste der Status-Slides aus aktuellen Bot-Daten."""
+        guild_count  = len(self.bot.guilds)
+        user_count   = sum(g.member_count or 0 for g in self.bot.guilds)
+        ping_ms      = round(self.bot.latency * 1000) if math.isfinite(self.bot.latency) else 0
+        cog_count    = len(self.bot.extensions)
+
+        # Uptime
+        launch = getattr(self.bot, "launch_time", None)
+        if launch:
+            delta   = datetime.datetime.now(datetime.timezone.utc) - launch
+            hours   = int(delta.total_seconds() // 3600)
+            minutes = int((delta.total_seconds() % 3600) // 60)
+            uptime  = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+        else:
+            uptime = "?"
+
+        # Offene Tickets (optional — lädt Store nur wenn vorhanden)
+        open_tickets = 0
+        try:
+            from utils.storage import JSONStore as _JS
+            _ts = _JS("data/tickets_open.json", {})
+            open_tickets = len(await _ts.read())
+        except Exception:
+            pass
+
+        slides: list[tuple[discord.ActivityType, str]] = [
+            (discord.ActivityType.watching,  f"{guild_count} Server{'n' if guild_count != 1 else ''}"),
+            (discord.ActivityType.playing,   f"mit {user_count:,} Usern"),
+            (discord.ActivityType.listening, f"{ping_ms} ms Ping"),
+            (discord.ActivityType.competing, f"hugosmp.net"),
+            (discord.ActivityType.watching,  f"{cog_count} Module geladen"),
+            (discord.ActivityType.playing,   f"seit {uptime} online"),
+        ]
+        if open_tickets > 0:
+            slides.append(
+                (discord.ActivityType.competing, f"{open_tickets} offene{'s' if open_tickets == 1 else ''} Ticket{'s' if open_tickets != 1 else ''}")
+            )
+        return slides
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /bot-status  — manuell setzen (pausiert Rotation)
     # ─────────────────────────────────────────────────────────────────────────
 
     @app_commands.command(
         name="bot-status",
-        description="Ändert den Bot-Status (Aktivitätstyp + Text).",
+        description="Ändert den Bot-Status manuell (pausiert die Auto-Rotation für 10 Min.).",
     )
     @app_commands.describe(
-        typ="Aktivitätstyp: playing / watching / listening / competing",
+        typ="Aktivitätstyp",
         text="Text der im Status angezeigt wird",
     )
     @app_commands.choices(typ=[
@@ -108,8 +197,15 @@ class BotStatus(commands.Cog):
                                   "Deine Rolle darf diesen Command nicht nutzen."),
                 ephemeral=True)
             return
+
         activity_type = ACTIVITY_TYPES.get(typ, discord.ActivityType.watching)
         await self.bot.change_presence(activity=discord.Activity(type=activity_type, name=text))
+
+        # Rotation für 10 Minuten pausieren
+        self._manual_until = (
+            datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(seconds=MANUAL_PAUSE_SECONDS)
+        )
 
         type_labels = {
             "playing":   "🎮 Playing",
@@ -119,8 +215,9 @@ class BotStatus(commands.Cog):
         }
         await interaction.response.send_message(
             embed=success_embed(
-                "✅ Bot-Status geändert",
-                f"**Typ:** {type_labels[typ]}\n**Text:** {text}",
+                "✅ Bot-Status gesetzt",
+                f"**Typ:** {type_labels[typ]}\n**Text:** {text}\n\n"
+                f"⏸️ Auto-Rotation pausiert für **{MANUAL_PAUSE_SECONDS // 60} Minuten**.",
             ),
             ephemeral=True,
         )

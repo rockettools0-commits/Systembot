@@ -30,7 +30,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from utils.storage import JSONStore
-from utils.theme import error_embed, warning_embed, success_embed, info_embed, get_footer_text
+from utils.theme import error_embed, warning_embed, success_embed, info_embed
 from utils.permissions import check_role_permission
 
 WARN_PATH           = "data/warnings.json"
@@ -160,6 +160,9 @@ class Moderation(commands.Cog):
 
         # Config-Cache
         self._automod_cache: dict = {}
+
+    # ── /mod Gruppe (neue Features) ──────────────────────────────────────────
+    mod = app_commands.Group(name="mod", description="Erweiterte Moderations-Werkzeuge.")
 
     async def cog_load(self):
         self.check_mutes.start()
@@ -308,11 +311,10 @@ class Moderation(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    automod = app_commands.Group(name="automod", description="Automod-Konfiguration.")
+    # ── /automod-config ───────────────────────────────────────────────────────
 
-    # ── /automod config ───────────────────────────────────────────────────────
-
-    @automod.command(name="config", description="Zeigt die aktuelle Automod-Konfiguration an.")
+    @app_commands.command(name="automod-config",
+                          description="Zeigt die aktuelle Automod-Konfiguration an.")
     async def automod_config(self, interaction: discord.Interaction):
         if not await check_role_permission(interaction, "moderation"):
             await interaction.response.send_message(
@@ -344,7 +346,8 @@ class Moderation(commands.Cog):
                         inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @automod.command(name="toggle", description="Aktiviert oder deaktiviert einen Automod-Filter.")
+    @app_commands.command(name="automod-toggle",
+                          description="Aktiviert oder deaktiviert einen Automod-Filter.")
     @app_commands.describe(filter_name="Welcher Filter?", aktiv="An oder Aus")
     @app_commands.choices(filter_name=[
         app_commands.Choice(name="🔗 Link-Filter",          value="link_filter"),
@@ -375,7 +378,8 @@ class Moderation(commands.Cog):
             embed=success_embed(f"🛡️ Filter {status}", f"`{filter_name}` wurde {status}."),
             ephemeral=True)
 
-    @automod.command(name="badword", description="Fügt ein Schimpfwort hinzu oder entfernt es.")
+    @app_commands.command(name="automod-badword",
+                          description="Fügt ein Schimpfwort hinzu oder entfernt es.")
     @app_commands.describe(aktion="Hinzufügen oder Entfernen", wort="Das Wort")
     @app_commands.choices(aktion=[
         app_commands.Choice(name="➕ Hinzufügen", value="add"),
@@ -415,7 +419,8 @@ class Moderation(commands.Cog):
             embed=success_embed("🚫 Wortliste aktualisiert", result["msg"]),
             ephemeral=True)
 
-    @automod.command(name="domain", description="Erlaubte Domain hinzufügen oder entfernen.")
+    @app_commands.command(name="automod-domain",
+                          description="Erlaubte Domain hinzufügen oder entfernen.")
     @app_commands.describe(aktion="Hinzufügen oder Entfernen", domain="z.B. youtube.com")
     @app_commands.choices(aktion=[
         app_commands.Choice(name="➕ Erlauben",   value="add"),
@@ -455,7 +460,8 @@ class Moderation(commands.Cog):
             embed=success_embed("✅ Domain-Liste aktualisiert", result["msg"]),
             ephemeral=True)
 
-    @automod.command(name="set", description="Setzt einen numerischen Automod-Wert.")
+    @app_commands.command(name="automod-set",
+                          description="Setzt einen numerischen Automod-Wert.")
     @app_commands.describe(
         einstellung="Was soll geändert werden?",
         wert="Neuer Wert (Zahl)",
@@ -566,7 +572,8 @@ class Moderation(commands.Cog):
             color=discord.Color.from_rgb(46, 204, 113),
             timestamp=datetime.datetime.now(datetime.timezone.utc),
         )
-        embed.set_footer(text=f"Ankündigung von {interaction.user} · {get_footer_text(interaction)}")
+        guild_name = interaction.guild.name if interaction.guild else "AVOKE"
+        embed.set_footer(text=f"Ankündigung von {interaction.user} · {guild_name}")
         try:
             await kanal.send(embed=embed)
         except discord.Forbidden:
@@ -1059,6 +1066,144 @@ class Moderation(commands.Cog):
                 inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    # ── /mod warn-stats ───────────────────────────────────────────────────────
+
+    @mod.command(name="warn-stats", description="Verwarnsstatistik eines Users — Anzahl, letzte Gründe, Top-Moderator.")
+    @app_commands.describe(user="Der User dessen Verwarnshistorie du sehen möchtest")
+    async def mod_warn_stats(self, interaction: discord.Interaction, user: discord.Member):
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung",
+                                  "Deine Rolle darf diesen Command nicht nutzen."),
+                ephemeral=True)
+            return
+        data    = await self.warn_store.read()
+        entries = data.get(str(interaction.guild.id), {}).get(str(user.id), [])
+        total   = len(entries)
+        embed   = info_embed(f"📊 Verwarnsstatistik — {user.display_name}")
+        embed.set_thumbnail(url=user.display_avatar.url)
+        embed.add_field(name="📋 Verwarnungen gesamt", value=str(total), inline=True)
+        if total == 0:
+            embed.description = f"**{user}** hat keine Verwarnungen."
+        else:
+            # Moderatoren-Häufigkeit
+            from collections import Counter
+            mod_counts = Counter(e.get("moderator", "Automod") for e in entries)
+            top_mod    = mod_counts.most_common(1)[0]
+            embed.add_field(name="🛡️ Häufigster Moderator", value=f"{top_mod[0]} ({top_mod[1]}x)", inline=True)
+            embed.add_field(name="📅 Erste Verwarnung",     value=entries[0]["timestamp"][:10],    inline=True)
+            embed.add_field(name="📅 Letzte Verwarnung",    value=entries[-1]["timestamp"][:10],   inline=True)
+            recent = entries[-5:]
+            lines  = [f"`#{len(entries) - len(recent) + i + 1}` {e['timestamp'][:10]} — {e['grund'][:60]}"
+                      for i, e in enumerate(recent)]
+            embed.add_field(name="🔎 Letzte 5 Verwarnungen", value="\n".join(lines), inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ── /mod clearnick-bulk ───────────────────────────────────────────────────
+
+    @mod.command(name="clearnick-bulk",
+                 description="Setzt Nicknames aller Mitglieder mit einer bestimmten Rolle auf einmal zurück.")
+    @app_commands.describe(rolle="Alle Mitglieder mit dieser Rolle werden zurückgesetzt")
+    @app_commands.checks.has_permissions(manage_nicknames=True)
+    async def mod_clearnick_bulk(self, interaction: discord.Interaction, rolle: discord.Role):
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung",
+                                  "Deine Rolle darf diesen Command nicht nutzen."),
+                ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        ok = fail = 0
+        for member in rolle.members:
+            if member.nick is None:
+                continue
+            try:
+                await member.edit(nick=None, reason=f"clearnick-bulk von {interaction.user}")
+                ok += 1
+            except discord.HTTPException:
+                fail += 1
+        await interaction.followup.send(
+            embed=success_embed(
+                "✅ Bulk-Nickname-Reset abgeschlossen",
+                f"**Zurückgesetzt:** {ok}  |  **Übersprungen/Fehler:** {fail}\n"
+                f"**Rolle:** {rolle.mention}",
+            ),
+            ephemeral=True,
+        )
+
+    # ── /mod massban ──────────────────────────────────────────────────────────
+
+    @mod.command(name="massban",
+                 description="Bannt mehrere User-IDs auf einmal (kommagetrennt).")
+    @app_commands.describe(
+        user_ids="Kommagetrennte Liste von User-IDs (z. B. `123,456,789`)",
+        grund="Grund für alle Banns",
+    )
+    @app_commands.checks.has_permissions(ban_members=True)
+    async def mod_massban(self, interaction: discord.Interaction,
+                          user_ids: str, grund: str = "Massban"):
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung",
+                                  "Deine Rolle darf diesen Command nicht nutzen."),
+                ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        ids     = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
+        ok: list[str] = []
+        fail: list[str] = []
+        for raw_id in ids[:50]:          # Maximal 50 IDs auf einmal
+            try:
+                uid = int(raw_id)
+            except ValueError:
+                fail.append(raw_id)
+                continue
+            try:
+                user = await interaction.client.fetch_user(uid)
+                await interaction.guild.ban(user, reason=f"{grund} | Von: {interaction.user}")
+                ok.append(str(uid))
+                self.bot.dispatch("clan_action", interaction.guild, "ban", user,
+                                  interaction.user, grund, "Massban")
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                fail.append(str(uid))
+        lines = [f"✅ Gebannt: **{len(ok)}** User"]
+        if ok:
+            lines.append(", ".join(f"`{i}`" for i in ok[:20])
+                         + ("…" if len(ok) > 20 else ""))
+        if fail:
+            lines.append(f"❌ Fehlgeschlagen: {', '.join(f'`{i}`' for i in fail[:10])}")
+        await interaction.followup.send(
+            embed=(success_embed if ok else error_embed)(
+                "🔨 Massban abgeschlossen", "\n".join(lines)),
+            ephemeral=True)
+
+    # ── /mod nick-history ─────────────────────────────────────────────────────
+
+    @mod.command(name="nick-history",
+                 description="Zeigt die letzten 10 bekannten Nicknames eines Users.")
+    @app_commands.describe(user="Das Mitglied")
+    async def mod_nick_history(self, interaction: discord.Interaction, user: discord.Member):
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung",
+                                  "Deine Rolle darf diesen Command nicht nutzen."),
+                ephemeral=True)
+            return
+        # Liest Nickname-History aus dem Warn-Store (gespeichert via on_member_update)
+        nick_store = JSONStore("data/nick_history.json", {})
+        data       = await nick_store.read()
+        history    = data.get(str(interaction.guild.id), {}).get(str(user.id), [])
+        if not history:
+            await interaction.response.send_message(
+                embed=info_embed("ℹ️ Keine History", f"Keine gespeicherten Nicknames für {user.mention}."),
+                ephemeral=True)
+            return
+        lines = [f"`{i+1}.` {entry['nick']!r}  — {entry['ts'][:10]}"
+                 for i, entry in enumerate(history[-10:])]
+        embed = info_embed(f"📝 Nickname-History — {user.display_name}", "\n".join(lines))
+        embed.set_thumbnail(url=user.display_avatar.url)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             msg = error_embed("❌ Keine Berechtigung", "Du hast nicht die nötigen Berechtigungen.")
@@ -1118,6 +1263,28 @@ class Moderation(commands.Cog):
                                       f"Mindest-Alter: {min_days} Tage")
                 except discord.HTTPException:
                     pass
+
+    # ── Nickname-History Tracking ─────────────────────────────────────────────
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if before.nick == after.nick:
+            return
+        if after.nick is None:
+            return
+        nick_store = JSONStore("data/nick_history.json", {})
+        ts  = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        gid = str(after.guild.id)
+        uid = str(after.id)
+        def mutate(data):
+            hist = data.setdefault(gid, {}).setdefault(uid, [])
+            hist.append({"nick": after.nick, "ts": ts})
+            data[gid][uid] = hist[-20:]   # maximal 20 Einträge
+            return data
+        try:
+            await nick_store.update(mutate)
+        except Exception:
+            pass
 
     # ── Nachrichten-Automod ───────────────────────────────────────────────────
 
