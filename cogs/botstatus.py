@@ -17,17 +17,22 @@ Merkmale:
 """
 
 import datetime
+import math
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from utils.storage import JSONStore
+from utils.system_state import get_maintenance_state
 from utils.theme import success_embed, error_embed, info_embed, warning_embed, FOOTER_TEXT, get_footer_text
 from utils.permissions import check_role_permission
+from cogs.ratings import compute_rating_stats
 
 STREAMER_CONFIG_PATH = "data/streamer_config.json"
 STREAMER_STATE_PATH  = "data/streamer_state.json"
+TICKETS_PATH         = "data/tickets_open.json"
+ECONOMY_PATH         = "data/economy.json"
 
 # Twitch-Lila
 COLOR_LIVE = discord.Color.from_rgb(100, 65, 165)
@@ -80,6 +85,8 @@ class BotStatus(commands.Cog):
         self.bot    = bot
         self.config = JSONStore(STREAMER_CONFIG_PATH, default_streamer_config())
         self.state  = JSONStore(STREAMER_STATE_PATH,  default_streamer_state())
+        self.tickets_store = JSONStore(TICKETS_PATH, {})
+        self.economy_store = JSONStore(ECONOMY_PATH, {})
 
         self._rotate_index: int = 0
         # Zeitstempel des letzten manuellen /bot-status — None = Rotation läuft
@@ -144,21 +151,41 @@ class BotStatus(commands.Cog):
         else:
             uptime = "?"
 
-        # Offene Tickets (optional — lädt Store nur wenn vorhanden)
-        open_tickets = 0
+        # Live-Daten kommen aus den vorhandenen, gecachten Stores. Ein Fehler
+        # in einem optionalen Modul darf die Status-Rotation nie stoppen.
         try:
-            from utils.storage import JSONStore as _JS
-            _ts = _JS("data/tickets_open.json", {})
-            open_tickets = len(await _ts.read())
+            open_tickets = len(await self.tickets_store.read())
         except Exception:
-            pass
+            open_tickets = 0
+
+        try:
+            economy = await self.economy_store.read()
+            economy_users = sum(len(users) for users in economy.values() if isinstance(users, dict))
+            total_coins = sum(
+                int(account.get("coins", 0)) + int(account.get("bank", 0))
+                for users in economy.values() if isinstance(users, dict)
+                for account in users.values() if isinstance(account, dict)
+            )
+        except Exception:
+            economy_users, total_coins = 0, 0
+
+        try:
+            ratings = await compute_rating_stats()
+        except Exception:
+            ratings = {"count": 0, "average": 0.0}
+
+        def number(value: int) -> str:
+            return f"{value:,}".replace(",", ".")
 
         slides: list[tuple[discord.ActivityType, str]] = [
-            (discord.ActivityType.watching,  f"{guild_count} Server{'n' if guild_count != 1 else ''}"),
-            (discord.ActivityType.playing,   f"mit {user_count:,} Usern"),
+            (discord.ActivityType.watching,  f"{number(guild_count)} Server"),
+            (discord.ActivityType.playing,   f"mit {number(user_count)} Mitgliedern"),
             (discord.ActivityType.listening, f"{ping_ms} ms Ping"),
-            (discord.ActivityType.competing, f"hugosmp.net"),
-            (discord.ActivityType.watching,  f"{cog_count} Module geladen"),
+            (discord.ActivityType.competing, f"{open_tickets} offene Tickets"),
+            (discord.ActivityType.watching,  f"{number(economy_users)} Economy-Konten"),
+            (discord.ActivityType.playing,   f"{number(total_coins)} Coins im Umlauf"),
+            (discord.ActivityType.watching,  f"Ticket-Support: {ratings['average']:.1f}/5 ★" if ratings["count"] else "Ticket-Support bereit"),
+            (discord.ActivityType.listening, f"{cog_count} Module aktiv"),
             (discord.ActivityType.playing,   f"seit {uptime} online"),
         ]
         if open_tickets > 0:
