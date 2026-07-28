@@ -140,15 +140,22 @@ class AntiNuke(commands.Cog):
 
         # ── Gegenmaßnahmen ───────────────────────────────────────────────────
         if action in ("derank", "ban") and member:
-            # Höchste Rolle unterhalb des Bots entziehen
+            # Alle Rollen entziehen die gefährliche Berechtigungen haben
+            # WICHTIG: Klammern erzwingen korrekte Operator-Reihenfolge (and > or)
             try:
                 dangerous_roles = [
                     r for r in member.roles
-                    if r != guild.default_role
-                    and r.position < guild.me.top_role.position
-                    and r.permissions.administrator or r.permissions.manage_channels
-                    or r.permissions.ban_members or r.permissions.kick_members
-                    or r.permissions.manage_roles
+                    if (
+                        r != guild.default_role
+                        and r.position < guild.me.top_role.position
+                        and (
+                            r.permissions.administrator
+                            or r.permissions.manage_channels
+                            or r.permissions.ban_members
+                            or r.permissions.kick_members
+                            or r.permissions.manage_roles
+                        )
+                    )
                 ]
                 if dangerous_roles:
                     await member.remove_roles(
@@ -538,6 +545,29 @@ class AntiNuke(commands.Cog):
         ]
         await interaction.response.send_message(
             embed=warning_embed("🛡️ Letzte Anti-Nuke Vorfälle", "\n".join(lines)),
+            ephemeral=True,
+        )
+
+    @antinuke.command(name="log-clear", description="Leert das Anti-Nuke-Log für diesen Server.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def log_clear(self, interaction: discord.Interaction) -> None:
+        """Löscht alle gespeicherten Anti-Nuke-Vorfälle für diese Guild."""
+        def mutate(data: dict) -> dict:
+            data.pop(str(interaction.guild.id), None)
+            return data
+
+        await self.log_store.update(mutate)
+        # Auch In-Memory Counter zurücksetzen
+        keys_to_remove = [
+            k for k in list(self._counters.keys())
+            if k[0] == interaction.guild.id
+        ]
+        for k in keys_to_remove:
+            del self._counters[k]
+        self._handled = {h for h in self._handled if h[0] != interaction.guild.id}
+
+        await interaction.response.send_message(
+            embed=success_embed("🗑️ Log geleert", "Das Anti-Nuke-Log wurde zurückgesetzt."),
             ephemeral=True,
         )
 

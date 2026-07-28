@@ -34,8 +34,11 @@ ANALYTICS   = DATA / "ticket_analytics.json"
 SECURITY    = DATA / "security_history.json"
 ANTINUKE    = DATA / "antinuke_log.json"
 CASES       = DATA / "cases.json"
+APPEALS     = DATA / "appeals.json"
 SLA_CFG     = DATA / "ticket_sla.json"
 AUTOMATION  = DATA / "automation_config.json"
+CAPTCHA_CFG = DATA / "captcha_config.json"
+ANTINUKE_CFG = DATA / "antinuke_config.json"
 
 
 def _read(path: Path) -> dict:
@@ -171,13 +174,78 @@ def api_automations():
     return jsonify(data)
 
 
+@app.route("/api/sla", methods=["GET"])
+def api_sla():
+    """Gibt SLA-Konfiguration und Statistiken zurück."""
+    _check_auth()
+    data     = _read(SLA_CFG)
+    analytics = _read(ANALYTICS)
+    guild_id = request.args.get("guild_id")
+    if guild_id:
+        stored  = data.get(guild_id, {})
+        config  = {
+            "enabled":            stored.get("enabled", False),
+            "sla_hours":          stored.get("sla_hours", 24),
+            "warn_hours":         stored.get("warn_hours", 20),
+            "auto_close_hours":   stored.get("auto_close_hours", 48),
+            "auto_close_enabled": stored.get("auto_close_enabled", False),
+            "log_channel_id":     stored.get("log_channel_id"),
+        }
+        stats_key   = f"stats_{guild_id}"
+        guild_stats = analytics.get(stats_key, {})
+        total_closed   = sum(s.get("closed", 0) for s in guild_stats.values())
+        total_resp     = sum(s.get("response_count", 0) for s in guild_stats.values())
+        total_resp_s   = sum(s.get("total_response_s", 0) for s in guild_stats.values())
+        avg_resp_min   = round(total_resp_s / total_resp / 60, 1) if total_resp > 0 else None
+        return jsonify({
+            "guild_id":       guild_id,
+            "config":         config,
+            "total_closed":   total_closed,
+            "avg_response_min": avg_resp_min,
+            "supporters":     len(guild_stats),
+        })
+    return jsonify({"sla": data})
+
+
+@app.route("/api/captcha", methods=["GET"])
+def api_captcha():
+    """Gibt Captcha-Konfiguration zurück."""
+    _check_auth()
+    data     = _read(CAPTCHA_CFG)
+    guild_id = request.args.get("guild_id")
+    if guild_id:
+        stored = data.get(guild_id, {})
+        return jsonify({
+            "guild_id":    guild_id,
+            "enabled":     stored.get("enabled", False),
+            "alt_min_days": stored.get("alt_min_days", 30),
+            "alt_action":  stored.get("alt_action", "log"),
+        })
+    return jsonify(data)
+
+
+@app.route("/api/appeals", methods=["GET"])
+def api_appeals():
+    """Gibt Einsprüche zurück (optional nach guild_id und Status gefiltert)."""
+    _check_auth()
+    data     = _read(APPEALS)
+    guild_id = request.args.get("guild_id")
+    status   = request.args.get("status")   # pending | accepted | denied
+    if guild_id:
+        guild_appeals = data.get(guild_id, {})
+        if status:
+            guild_appeals = {k: v for k, v in guild_appeals.items() if v.get("status") == status}
+        return jsonify({"guild_id": guild_id, "appeals": guild_appeals})
+    return jsonify(data)
+
+
 @app.route("/api/status", methods=["GET"])
 def api_status():
     """Gibt Bot-Status-Informationen zurück."""
     return jsonify({
         "status":    "online",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "version":   "2.0.0",
+        "version":   "3.0.0",
     })
 
 
@@ -239,12 +307,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   </div>
 
   <div class="nav">
-    <button class="active" onclick="showTab('tickets')">🎫 Tickets</button>
-    <button onclick="showTab('analytics')">📊 Analytics</button>
-    <button onclick="showTab('security')">🛡️ Security</button>
-    <button onclick="showTab('antinuke')">🔒 Anti-Nuke</button>
-    <button onclick="showTab('cases')">📋 Cases</button>
-    <button onclick="showTab('automations')">🤖 Automationen</button>
+    <button class="active" onclick="showTab('tickets', this)">🎫 Tickets</button>
+    <button onclick="showTab('analytics', this)">📊 Analytics</button>
+    <button onclick="showTab('security', this)">🛡️ Security</button>
+    <button onclick="showTab('antinuke', this)">🔒 Anti-Nuke</button>
+    <button onclick="showTab('cases', this)">📋 Cases</button>
+    <button onclick="showTab('appeals', this)">📩 Einsprüche</button>
+    <button onclick="showTab('automations', this)">🤖 Automationen</button>
+    <button onclick="showTab('sla', this)">⏱️ SLA</button>
   </div>
 
   <div id="tab-tickets" class="tab active section">
@@ -277,13 +347,24 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <tbody id="cases-body"><tr><td colspan="6" class="loading">Lade…</td></tr></tbody></table>
   </div>
 
+  <div id="tab-appeals" class="tab section">
+    <h3>📩 Einsprüche</h3>
+    <table><thead><tr><th>Fall #</th><th>Antragsteller</th><th>Status</th><th>Eingereicht</th></tr></thead>
+    <tbody id="appeals-body"><tr><td colspan="4" class="loading">Lade…</td></tr></tbody></table>
+  </div>
+
   <div id="tab-automations" class="tab section">
     <h3>🤖 Automationen</h3>
     <table><thead><tr><th>Name</th><th>ID</th><th>Trigger</th><th>Aktion</th><th>Status</th></tr></thead>
     <tbody id="automations-body"><tr><td colspan="5" class="loading">Lade…</td></tr></tbody></table>
   </div>
+
+  <div id="tab-sla" class="tab section">
+    <h3>⏱️ SLA-Übersicht</h3>
+    <div id="sla-content" class="loading">Lade…</div>
+  </div>
 </div>
-<footer>AVOKE Bot Dashboard &mdash; nur für autorisierte Administratoren</footer>
+<footer>AVOKE Bot Dashboard v3.0 &mdash; nur für autorisierte Administratoren</footer>
 
 <script>
 const GUILD_ID = new URLSearchParams(location.search).get("guild_id") || "";
@@ -312,11 +393,11 @@ function ts(iso) {
   return new Date(iso).toLocaleString("de-DE");
 }
 
-function showTab(name) {
+function showTab(name, btn) {
   document.querySelectorAll(".tab").forEach(el => el.classList.remove("active"));
   document.querySelectorAll(".nav button").forEach(el => el.classList.remove("active"));
   document.getElementById("tab-" + name).classList.add("active");
-  event.target.classList.add("active");
+  if (btn) btn.classList.add("active");
 }
 
 async function loadAll() {
@@ -374,8 +455,42 @@ async function loadAll() {
     const tbody = document.getElementById("antinuke-body");
     if (!items.length) tbody.innerHTML = "<tr><td colspan='3'>Keine Vorfälle</td></tr>";
     else tbody.innerHTML = items.slice(-20).reverse().map(i =>
-      `<tr><td><@${esc(i.user_id)}></td><td>${esc(i.reason)}</td><td>${ts(i.timestamp)}</td></tr>`
+      `<tr><td>${esc(i.user_id)}</td><td>${esc(i.reason)}</td><td>${ts(i.timestamp)}</td></tr>`
     ).join("");
+  } catch {}
+
+  // Appeals
+  try {
+    const base = "/api/appeals?status=pending" + (GUILD_ID ? "&guild_id=" + GUILD_ID : "");
+    const ap = await fetchJSON(base);
+    const apItems = Object.entries(ap.appeals || {});
+    const tbody = document.getElementById("appeals-body");
+    if (!apItems.length) tbody.innerHTML = "<tr><td colspan='4'>Keine ausstehenden Einsprüche</td></tr>";
+    else tbody.innerHTML = apItems.map(([cid, a]) =>
+      `<tr><td>#${esc(cid)}</td><td>${esc(a.user_id)}</td><td><span class="badge badge-yellow">${esc(a.status)}</span></td><td>${ts(a.submitted)}</td></tr>`
+    ).join("");
+  } catch {}
+
+  // SLA-Report
+  try {
+    const base = "/api/sla" + (GUILD_ID ? "?guild_id=" + GUILD_ID : "");
+    const sla = await fetchJSON(base);
+    const el = document.getElementById("sla-content");
+    if (sla.config) {
+      const cfg = sla.config;
+      el.innerHTML = `
+        <table><tbody>
+          <tr><td><b>Status</b></td><td><span class="badge ${cfg.enabled ? 'badge-green' : 'badge-red'}">${cfg.enabled ? 'Aktiv' : 'Inaktiv'}</span></td></tr>
+          <tr><td><b>SLA-Frist</b></td><td>${cfg.sla_hours}h</td></tr>
+          <tr><td><b>Warnung</b></td><td>${cfg.warn_hours}h vor Ablauf</td></tr>
+          <tr><td><b>Auto-Close</b></td><td>${cfg.auto_close_enabled ? cfg.auto_close_hours + 'h Inaktivität' : 'Deaktiviert'}</td></tr>
+          <tr><td><b>Tickets geschlossen</b></td><td>${esc(sla.total_closed)}</td></tr>
+          <tr><td><b>Ø Antwortzeit</b></td><td>${sla.avg_response_min != null ? sla.avg_response_min + ' min' : '—'}</td></tr>
+          <tr><td><b>Aktive Supporter</b></td><td>${esc(sla.supporters)}</td></tr>
+        </tbody></table>`;
+    } else {
+      el.innerHTML = "<p>Bitte guild_id Parameter setzen für SLA-Daten.</p>";
+    }
   } catch {}
 
   // Cases

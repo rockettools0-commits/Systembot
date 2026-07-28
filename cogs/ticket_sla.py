@@ -438,6 +438,82 @@ class TicketSLA(commands.Cog):
     async def sla_leaderboard(self, interaction: discord.Interaction) -> None:
         await self.sla_stats(interaction)  # Gleiche Ausgabe — Alias
 
+    @sla.command(name="reset-stats", description="Setzt alle Supporter-Analytics für diesen Server zurück.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def sla_reset_stats(self, interaction: discord.Interaction) -> None:
+        """Entfernt alle aggregierten Supporter-Statistiken für diese Guild."""
+        stats_key = f"stats_{interaction.guild.id}"
+
+        def mutate(data: dict) -> dict:
+            data.pop(stats_key, None)
+            data.pop(str(interaction.guild.id), None)  # Auch offene Ticket-Daten
+            return data
+
+        await self.analytics_store.update(mutate)
+        await interaction.response.send_message(
+            embed=success_embed(
+                "🗑️ Analytics zurückgesetzt",
+                "Alle Supporter-Statistiken für diesen Server wurden gelöscht.",
+            ),
+            ephemeral=True,
+        )
+
+    @sla.command(name="report", description="Erstellt einen vollständigen SLA-Report für diesen Server.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def sla_report(self, interaction: discord.Interaction) -> None:
+        """Erstellt einen kombinierten Report aus SLA-Config, Stats und offenen Tickets."""
+        import datetime as _dt
+
+        await interaction.response.defer(ephemeral=True)
+
+        sla_data    = await self.sla_store.read()
+        analytics   = await self.analytics_store.read()
+        open_data   = await self.open_store.read()
+        config      = self._guild_config(sla_data, interaction.guild.id)
+        guild_stats = analytics.get(f"stats_{interaction.guild.id}", {})
+
+        # Offene Tickets zählen (alle Tickets auf diesem Server)
+        open_count  = sum(1 for ch_id in open_data)
+        # Gesamtstatistiken aggregieren
+        total_closed    = sum(s.get("closed", 0)         for s in guild_stats.values())
+        total_responses = sum(s.get("response_count", 0) for s in guild_stats.values())
+        total_resp_s    = sum(s.get("total_response_s", 0) for s in guild_stats.values())
+        avg_resp_min    = (
+            round(total_resp_s / total_responses / 60, 1)
+            if total_responses > 0 else None
+        )
+        total_ratings   = sum(s.get("ratings_count", 0) for s in guild_stats.values())
+        total_rating_s  = sum(s.get("ratings_sum", 0)   for s in guild_stats.values())
+        avg_rating      = round(total_rating_s / total_ratings, 2) if total_ratings > 0 else None
+
+        embed = info_embed(
+            "📋 SLA-Report",
+            (
+                f"**SLA-System:** {'✅ Aktiv' if config['enabled'] else '❌ Inaktiv'}\n"
+                f"**SLA-Frist:** {config['sla_hours']}h\n"
+                f"**Warnung bei:** {config['warn_hours']}h\n"
+                f"**Auto-Close:** "
+                + (f"✅ nach {config['auto_close_hours']}h Inaktivität" if config['auto_close_enabled'] else "❌")
+            ),
+        )
+        embed.add_field(
+            name  = "📊 Gesamt-Statistiken",
+            value = (
+                f"Offene Tickets: **{open_count}**\n"
+                f"Geschlossene: **{total_closed}**\n"
+                f"Ø Antwortzeit: **{str(avg_resp_min) + 'min' if avg_resp_min else '—'}**\n"
+                f"Ø Bewertung: **{str(avg_rating) + ' ⭐' if avg_rating else '—'}**"
+            ),
+            inline=True,
+        )
+        embed.add_field(
+            name  = "👥 Supporter aktiv",
+            value = str(len(guild_stats)),
+            inline=True,
+        )
+        embed.set_footer(text=f"Report erstellt von {interaction.user} | AVOKE SLA")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Erfasst erste Support-Antwort für Antwortzeit-Messung."""

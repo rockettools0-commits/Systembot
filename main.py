@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from utils.errorlog import DequeErrorHandler
 from utils.logger import setup_logging, get_logger
 from utils.system_state import apply_presence
+from utils.db import db   # SQLite-Datenbank (optional — graceful degradation wenn aiosqlite fehlt)
 
 load_dotenv()
 
@@ -73,6 +74,15 @@ class AVOKEBot(commands.Bot):
         self.launch_time = datetime.datetime.now(datetime.timezone.utc)
 
     async def setup_hook(self):
+        # ── Datenbank initialisieren ───────────────────────────────────────────
+        # Graceful degradation: wenn aiosqlite nicht installiert ist, läuft der Bot
+        # weiterhin — nur die SQLite-Schicht ist deaktiviert.
+        try:
+            await db.init()
+            log.info("Datenbank (SQLite) initialisiert.")
+        except Exception as exc:
+            log.warning("Datenbank-Initialisierung fehlgeschlagen (Bot läuft ohne SQLite): %s", exc)
+
         cogs = [
             "cogs.tickets",
             "cogs.trading",
@@ -131,6 +141,14 @@ class AVOKEBot(commands.Bot):
                 log.info(f"{len(synced)} Slash-Commands global synchronisiert.")
         except Exception as e:
             log.exception(f"Fehler beim Synchronisieren der Slash-Commands: {e}")
+
+    async def close(self) -> None:
+        """Schließt die Datenbank-Verbindung sauber beim Bot-Shutdown."""
+        try:
+            await db.close()
+        except Exception:
+            pass
+        await super().close()
 
     async def on_ready(self):
         # ── Startup-Banner ────────────────────────────────────────────────────
