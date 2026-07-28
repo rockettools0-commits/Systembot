@@ -161,9 +161,14 @@ class Moderation(commands.Cog):
         # Config-Cache
         self._automod_cache: dict = {}
 
-    # ── /mod Gruppe (neue Features) ──────────────────────────────────────────
-    mod = app_commands.Group(name="mod", description="Erweiterte Moderations-Werkzeuge.")
-    automod = app_commands.Group(name="automod", description="Automatische Moderation konfigurieren.")
+    # ── Slash-Command-Gruppen ─────────────────────────────────────────────────
+    # Discord-Limit: max. 25 Subcommands pro Gruppe.
+    # /mod        — Kern-Moderation (ban, kick, mute, warn, …)
+    # /modtools   — Erweiterte Tools (purge, slowmode, massban, nick-history, …)
+    # /automod    — Automatische Moderation konfigurieren
+    mod      = app_commands.Group(name="mod",      description="Kern-Moderations-Werkzeuge.")
+    modtools = app_commands.Group(name="modtools", description="Erweiterte Moderations-Tools (purge, massban, …).")
+    automod  = app_commands.Group(name="automod",  description="Automatische Moderation konfigurieren.")
 
     async def cog_load(self):
         self.check_mutes.start()
@@ -1107,9 +1112,9 @@ class Moderation(commands.Cog):
                 inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # ── /mod warn-stats ───────────────────────────────────────────────────────
+    # ── /modtools warn-stats ──────────────────────────────────────────────────
 
-    @mod.command(name="warn-stats", description="Verwarnsstatistik eines Users — Anzahl, letzte Gründe, Top-Moderator.")
+    @modtools.command(name="warn-stats", description="Verwarnsstatistik eines Users — Anzahl, letzte Gründe, Top-Moderator.")
     @app_commands.describe(user="Der User dessen Verwarnshistorie du sehen möchtest")
     async def mod_warn_stats(self, interaction: discord.Interaction, user: discord.Member):
         if not await check_role_permission(interaction, "moderation"):
@@ -1140,9 +1145,9 @@ class Moderation(commands.Cog):
             embed.add_field(name="🔎 Letzte 5 Verwarnungen", value="\n".join(lines), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    # ── /mod clearnick-bulk ───────────────────────────────────────────────────
+    # ── /modtools clearnick-bulk ──────────────────────────────────────────────
 
-    @mod.command(name="clearnick-bulk",
+    @modtools.command(name="clearnick-bulk",
                  description="Setzt Nicknames aller Mitglieder mit einer bestimmten Rolle auf einmal zurück.")
     @app_commands.describe(rolle="Alle Mitglieder mit dieser Rolle werden zurückgesetzt")
     @app_commands.checks.has_permissions(manage_nicknames=True)
@@ -1172,9 +1177,9 @@ class Moderation(commands.Cog):
             ephemeral=True,
         )
 
-    # ── /mod massban ──────────────────────────────────────────────────────────
+    # ── /modtools massban ─────────────────────────────────────────────────────
 
-    @mod.command(name="massban",
+    @modtools.command(name="massban",
                  description="Bannt mehrere User-IDs auf einmal (kommagetrennt).")
     @app_commands.describe(
         user_ids="Kommagetrennte Liste von User-IDs (z. B. `123,456,789`)",
@@ -1218,9 +1223,9 @@ class Moderation(commands.Cog):
                 "🔨 Massban abgeschlossen", "\n".join(lines)),
             ephemeral=True)
 
-    # ── /mod nick-history ─────────────────────────────────────────────────────
+    # ── /modtools nick-history ────────────────────────────────────────────────
 
-    @mod.command(name="nick-history",
+    @modtools.command(name="nick-history",
                  description="Zeigt die letzten 10 bekannten Nicknames eines Users.")
     @app_commands.describe(user="Das Mitglied")
     async def mod_nick_history(self, interaction: discord.Interaction, user: discord.Member):
@@ -1519,7 +1524,7 @@ class Moderation(commands.Cog):
     # Softban = Ban + sofortiger Unban → löscht Nachrichten, entfernt vom Server,
     # aber der Nutzer kann sofort wieder joinen. Ideal für Spam-Accounts.
 
-    @mod.command(
+    @modtools.command(
         name="softban",
         description="Softbannt einen User (Ban + sofortiger Unban — löscht Nachrichten).",
     )
@@ -1577,7 +1582,7 @@ class Moderation(commands.Cog):
 
     # ── Purge (Nachrichten-Löschung) ──────────────────────────────────────────
 
-    @mod.command(
+    @modtools.command(
         name="purge",
         description="Löscht eine Anzahl Nachrichten im aktuellen Kanal (max. 100).",
     )
@@ -1636,7 +1641,7 @@ class Moderation(commands.Cog):
 
     # ── Slowmode ──────────────────────────────────────────────────────────────
 
-    @mod.command(
+    @modtools.command(
         name="slowmode",
         description="Setzt den Slowmode-Delay eines Kanals (0 = deaktivieren).",
     )
