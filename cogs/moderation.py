@@ -1504,7 +1504,7 @@ class Moderation(commands.Cog):
     # ── Nachträglich gesendete Nachrichten (Edit-Check) ───────────────────────
 
     @commands.Cog.listener()
-    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         """Bearbeitete Nachrichten werden ebenfalls durch den Automod gejagt."""
         if after.author.bot or after.guild is None:
             return
@@ -1515,6 +1515,329 @@ class Moderation(commands.Cog):
         # Automod erneut auf bearbeitete Nachricht anwenden
         await self.on_message(after)
 
+    # ── Softban ───────────────────────────────────────────────────────────────
+    # Softban = Ban + sofortiger Unban → löscht Nachrichten, entfernt vom Server,
+    # aber der Nutzer kann sofort wieder joinen. Ideal für Spam-Accounts.
 
-async def setup(bot: commands.Bot):
+    @mod.command(
+        name="softban",
+        description="Softbannt einen User (Ban + sofortiger Unban — löscht Nachrichten).",
+    )
+    @app_commands.describe(
+        user="Der zu softbannende User",
+        loeschtage="Wie viele Tage Nachrichten gelöscht werden (1–7)",
+        grund="Grund für den Softban",
+    )
+    @app_commands.checks.has_permissions(ban_members=True)
+    async def softban(
+        self,
+        interaction: discord.Interaction,
+        user:        discord.Member,
+        loeschtage:  app_commands.Range[int, 1, 7] = 1,
+        grund:       str = "Kein Grund angegeben",
+    ) -> None:
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung"),
+                ephemeral=True,
+            )
+            return
+        if user.top_role >= interaction.user.top_role and interaction.user.id != interaction.guild.owner_id:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Nicht möglich", "Höhere oder gleiche Rollenhierarchie."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.guild.ban(
+                user,
+                reason=f"Softban: {grund} | Von: {interaction.user}",
+                delete_message_days=loeschtage,
+            )
+            await interaction.guild.unban(user, reason=f"Softban-Unban: {grund}")
+        except discord.Forbidden:
+            await interaction.followup.send(embed=error_embed("❌ Keine Berechtigung", "Mir fehlen Ban-Rechte."), ephemeral=True)
+            return
+        except discord.HTTPException as exc:
+            await interaction.followup.send(embed=error_embed("❌ Fehler", str(exc)), ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            embed=success_embed(
+                "🔨 Softban ausgeführt",
+                f"**{user}** wurde softgebannt (Nachrichten der letzten **{loeschtage} Tage** gelöscht).\n"
+                f"**Grund:** {grund}",
+            ),
+            ephemeral=True,
+        )
+        self.bot.dispatch("clan_action", interaction.guild, "ban", user, interaction.user,
+                          grund, f"Softban: {loeschtage}d Nachrichten gelöscht")
+
+    # ── Purge (Nachrichten-Löschung) ──────────────────────────────────────────
+
+    @mod.command(
+        name="purge",
+        description="Löscht eine Anzahl Nachrichten im aktuellen Kanal (max. 100).",
+    )
+    @app_commands.describe(
+        anzahl="Anzahl zu löschender Nachrichten (1–100)",
+        nutzer="Nur Nachrichten dieses Nutzers löschen (optional)",
+        kanal="Kanal zum Bereinigen (Standard: aktueller)",
+    )
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def purge(
+        self,
+        interaction: discord.Interaction,
+        anzahl:      app_commands.Range[int, 1, 100],
+        nutzer:      discord.Member | None       = None,
+        kanal:       discord.TextChannel | None  = None,
+    ) -> None:
+        if not await check_role_permission(interaction, "utility"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung"),
+                ephemeral=True,
+            )
+            return
+
+        target = kanal or interaction.channel
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if nutzer:
+                def check(msg: discord.Message) -> bool:
+                    return msg.author.id == nutzer.id
+
+                deleted = await target.purge(limit=anzahl * 5, check=check, bulk=True)
+                # purge(limit=...) löscht bis zu limit Nachrichten die den Check bestehen
+                # Wir begrenzen auf anzahl
+                deleted = deleted[:anzahl]
+            else:
+                deleted = await target.purge(limit=anzahl, bulk=True)
+        except discord.Forbidden:
+            await interaction.followup.send(
+                embed=error_embed("❌ Keine Berechtigung", "Ich kann keine Nachrichten in diesem Kanal löschen."),
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as exc:
+            await interaction.followup.send(embed=error_embed("❌ Fehler", str(exc)), ephemeral=True)
+            return
+
+        user_info = f" von {nutzer.mention}" if nutzer else ""
+        await interaction.followup.send(
+            embed=success_embed(
+                f"🗑️ {len(deleted)} Nachrichten gelöscht",
+                f"**Kanal:** {target.mention}{user_info}",
+            ),
+            ephemeral=True,
+        )
+
+    # ── Slowmode ──────────────────────────────────────────────────────────────
+
+    @mod.command(
+        name="slowmode",
+        description="Setzt den Slowmode-Delay eines Kanals (0 = deaktivieren).",
+    )
+    @app_commands.describe(
+        sekunden="Verzögerung in Sekunden (0 = aus, max 21600 = 6h)",
+        kanal="Kanal (Standard: aktueller)",
+    )
+    @app_commands.checks.has_permissions(manage_channels=True)
+    async def slowmode(
+        self,
+        interaction: discord.Interaction,
+        sekunden:    app_commands.Range[int, 0, 21600],
+        kanal:       discord.TextChannel | None = None,
+    ) -> None:
+        if not await check_role_permission(interaction, "utility"):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung"),
+                ephemeral=True,
+            )
+            return
+
+        target = kanal or interaction.channel
+        if not isinstance(target, discord.TextChannel):
+            await interaction.response.send_message(
+                embed=error_embed("❌ Kein Text-Kanal"),
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await target.edit(slowmode_delay=sekunden, reason=f"Slowmode von {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Keine Berechtigung", "Ich kann den Kanal nicht bearbeiten."),
+                ephemeral=True,
+            )
+            return
+        except discord.HTTPException as exc:
+            await interaction.response.send_message(embed=error_embed("❌ Fehler", str(exc)), ephemeral=True)
+            return
+
+        if sekunden == 0:
+            text = f"Slowmode in {target.mention} **deaktiviert**."
+        else:
+            text = f"Slowmode in {target.mention} auf **{sekunden}s** gesetzt."
+
+        await interaction.response.send_message(embed=success_embed("⏱️ Slowmode", text), ephemeral=True)
+
+    # ── Voice-Moderation ──────────────────────────────────────────────────────
+
+    @mod.command(
+        name="voice-kick",
+        description="Wirft einen Nutzer aus dem Voice-Kanal (ohne Server-Kick).",
+    )
+    @app_commands.describe(nutzer="Das Mitglied im Voice-Kanal")
+    @app_commands.checks.has_permissions(move_members=True)
+    async def voice_kick(self, interaction: discord.Interaction, nutzer: discord.Member) -> None:
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        if not nutzer.voice or not nutzer.voice.channel:
+            await interaction.response.send_message(
+                embed=info_embed("ℹ️ Nicht im Voice", f"{nutzer.mention} ist in keinem Voice-Kanal."),
+                ephemeral=True,
+            )
+            return
+        try:
+            await nutzer.move_to(None, reason=f"Voice-Kick von {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        await interaction.response.send_message(
+            embed=success_embed("🔊 Voice-Kick", f"{nutzer.mention} wurde aus dem Voice-Kanal entfernt."),
+        )
+
+    @mod.command(
+        name="voice-mute",
+        description="Server-Mutet einen Nutzer im Voice-Kanal.",
+    )
+    @app_commands.describe(nutzer="Das zu mutende Mitglied", aktiv="Muten oder Entmuten")
+    @app_commands.checks.has_permissions(mute_members=True)
+    async def voice_mute(
+        self,
+        interaction: discord.Interaction,
+        nutzer:      discord.Member,
+        aktiv:       bool = True,
+    ) -> None:
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        try:
+            await nutzer.edit(mute=aktiv, reason=f"Voice-{'Mute' if aktiv else 'Unmute'} von {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        status = "gemutet" if aktiv else "entmutet"
+        await interaction.response.send_message(
+            embed=success_embed(f"🔇 Voice-{'Mute' if aktiv else 'Unmute'}", f"{nutzer.mention} wurde {status}."),
+        )
+
+    @mod.command(
+        name="voice-deafen",
+        description="Server-Deafent einen Nutzer im Voice-Kanal.",
+    )
+    @app_commands.describe(nutzer="Das zu deafende Mitglied", aktiv="Deafen oder Undeafen")
+    @app_commands.checks.has_permissions(deafen_members=True)
+    async def voice_deafen(
+        self,
+        interaction: discord.Interaction,
+        nutzer:      discord.Member,
+        aktiv:       bool = True,
+    ) -> None:
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        try:
+            await nutzer.edit(deafen=aktiv, reason=f"Voice-{'Deafen' if aktiv else 'Undeafen'} von {interaction.user}")
+        except discord.Forbidden:
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        status = "gedeafened" if aktiv else "undeafened"
+        await interaction.response.send_message(
+            embed=success_embed(f"🔕 Voice-{'Deafen' if aktiv else 'Undeafen'}", f"{nutzer.mention} wurde {status}."),
+        )
+
+    @mod.command(
+        name="voice-move-all",
+        description="Verschiebt alle Mitglieder aus einem Voice-Kanal in einen anderen.",
+    )
+    @app_commands.describe(von="Quell-Kanal", nach="Ziel-Kanal")
+    @app_commands.checks.has_permissions(move_members=True)
+    async def voice_move_all(
+        self,
+        interaction: discord.Interaction,
+        von:         discord.VoiceChannel,
+        nach:        discord.VoiceChannel,
+    ) -> None:
+        if not await check_role_permission(interaction, "moderation"):
+            await interaction.response.send_message(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        ok = fail = 0
+        for member in list(von.members):
+            try:
+                await member.move_to(nach, reason=f"Voice-Move-All von {interaction.user}")
+                ok += 1
+            except discord.HTTPException:
+                fail += 1
+        await interaction.followup.send(
+            embed=success_embed(
+                "🔀 Voice-Move-All abgeschlossen",
+                f"**{ok}** Mitglieder von {von.mention} → {nach.mention} verschoben.\n"
+                f"**{fail}** fehlgeschlagen.",
+            ),
+            ephemeral=True,
+        )
+
+    @mod.command(
+        name="clear-channel",
+        description="Löscht alle Nachrichten in einem Kanal durch Klon + Löschen (nuke).",
+    )
+    @app_commands.describe(kanal="Der zu leererende Kanal (Standard: aktueller)")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def clear_channel(
+        self,
+        interaction: discord.Interaction,
+        kanal:       discord.TextChannel | None = None,
+    ) -> None:
+        """
+        Erstellt einen identischen Kanal-Klon, löscht den Original-Kanal
+        und benennt den Klon zurück. Effizienteste Methode zum vollständigen
+        Leeren eines Kanals (kein 14-Tage-Limit bei bulk_delete).
+        """
+        target = kanal or interaction.channel
+        if not isinstance(target, discord.TextChannel):
+            await interaction.response.send_message(embed=error_embed("❌ Kein Text-Kanal"), ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            position  = target.position
+            new_channel = await target.clone(reason=f"Clear-Channel von {interaction.user}")
+            await new_channel.edit(position=position)
+            await target.delete(reason=f"Clear-Channel von {interaction.user}")
+        except discord.Forbidden:
+            await interaction.followup.send(embed=error_embed("❌ Keine Berechtigung"), ephemeral=True)
+            return
+        except discord.HTTPException as exc:
+            await interaction.followup.send(embed=error_embed("❌ Fehler", str(exc)), ephemeral=True)
+            return
+
+        try:
+            await new_channel.send(
+                embed=success_embed(
+                    "🧹 Kanal geleert",
+                    f"Dieser Kanal wurde von {interaction.user.mention} vollständig geleert.",
+                )
+            )
+        except discord.HTTPException:
+            pass
+
+
+async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Moderation(bot))

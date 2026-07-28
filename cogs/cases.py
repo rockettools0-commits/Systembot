@@ -1,0 +1,432 @@
+"""
+Case-System — vollständiges Moderations-Fallverwaltungssystem.
+
+Funktionen:
+  • Jede Moderation erzeugt automatisch einen Fall mit eindeutiger ID
+  • Fälle können kommentiert und nachträglich bearbeitet werden
+  • Benutzer können schriftliche Einsprüche (Appeals) einreichen
+  • Moderatoren können Einsprüche annehmen oder ablehnen
+  • Vollständige Fallhistorie pro Server und pro Nutzer
+  • Datenschutz: Einsprüche sind nur für Admins einsehbar
+"""
+from __future__ import annotations
+
+import datetime
+from typing import Any
+
+import discord
+from discord import app_commands
+from discord.ext import commands
+
+from utils.storage import JSONStore
+from utils.theme import (
+    error_embed, info_embed, success_embed, warning_embed, dark_embed
+)
+
+CASES_PATH   = "data/cases.json"
+APPEALS_PATH = "data/appeals.json"
+
+# Gültige Aktionstypen für automatisch erstellte Fälle
+CASE_ACTIONS = {
+    "warn":    ("⚠️",  discord.Color.from_rgb(243, 156, 18)),   # Verwarnung
+    "mute":    ("🔇",  discord.Color.from_rgb(130, 80,  255)),   # Timeout/Mute
+    "kick":    ("👢",  discord.Color.from_rgb(235, 200, 75)),    # Kick
+    "ban":     ("🔨",  discord.Color.from_rgb(235, 77,  75)),    # Ban
+    "unban":   ("🔓",  discord.Color.from_rgb(88,  214, 141)),   # Unban
+    "unmute":  ("🔊",  discord.Color.from_rgb(88,  214, 141)),   # Unmute
+    "note":    ("📝",  discord.Color.from_rgb(84,  153, 199)),   # Notiz
+}
+
+APPEAL_STATUS = {
+    "pending":  "⏳ Ausstehend",
+    "accepted": "✅ Angenommen",
+    "denied":   "❌ Abgelehnt",
+}
+
+
+def _next_case_id(guild_data: dict) -> int:
+    """Gibt die nächste freie Fall-ID zurück (auto-increment)."""
+    existing = [int(k) for k in guild_data.get("cases", {}) if k.isdigit()]
+    return max(existing, default=0) + 1
+
+
+class AppealModal(discord.ui.Modal, title="📩 Einspruch einreichen"):
+    """Modal, das der Nutzer ausfüllt, um einen Einspruch zu einem Fall einzureichen."""
+
+    reason = discord.ui.TextInput(
+        label="Dein Einspruch",
+        placeholder="Erkläre, warum du denkst, dass diese Maßnahme ungerechtfertigt war…",
+        style=discord.TextStyle.paragraph,
+        min_length=20,
+        max_length=1000,
+    )
+
+    def __init__(self, case_id: int, guild_id: int):
+        super().__init__()
+        self.case_id  = case_id
+        self.guild_id = guild_id
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        store = JSONStore(APPEALS_PATH, {})
+
+        def mutate(data: dict) -> dict:
+            guild_appeals = data.setdefault(str(self.guild_id), {})
+            # Nur ein offener Einspruch pro Fall erlaubt
+            guild_appeals[str(self.case_id)] = {
+                "user_id":    interaction.user.id,
+                "reason":     self.reason.value,
+                "status":     "pending",
+                "submitted":  datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "reviewed_by": None,
+                "review_note": None,
+            }
+            return data
+
+        await store.update(mutate)
+        await interaction.response.send_message(
+            embed=success_embed(
+                "📩 Einspruch eingereicht",
+                f"Dein Einspruch zu Fall **#{self.case_id}** wurde hinterlegt.\n"
+                "Das Moderations-Team wird ihn prüfen und dich benachrichtigen.",
+            ),
+            ephemeral=True,
+        )
+
+
+class AppealReviewView(discord.ui.View):
+    """Buttons zum Annehmen/Ablehnen eines Einspruchs, erscheinen im Moderationskanal."""
+
+    def __init__(self, case_id: int, guild_id: int, user_id: int):
+        super().__init__(timeout=None)
+        self.case_id  = case_id
+        self.guild_id = guild_id
+        self.user_id  = user_id
+        # Persistente custom_ids damit die Buttons nach einem Neustart weiterhin funktionieren
+        self.accept_btn.custom_id = f"appeal_accept:{guild_id}:{case_id}"
+        self.deny_btn.custom_id   = f"appeal_deny:{guild_id}:{case_id}"
+
+    async def _update(self, interaction: discord.Interaction, new_status: str) -> None:
+        if not interaction.user.guild_permissions.moderate_members:
+            await interaction.response.send_message("❌ Keine Berechtigung.", ephemeral=True)
+            return
+
+        store = JSONStore(APPEALS_PATH, {})
+
+        def mutate(data: dict) -> dict:
+            appeal = data.setdefault(str(self.guild_id), {}).get(str(self.case_id))
+            if appeal:
+                appeal["status"]      = new_status
+                appeal["reviewed_by"] = interaction.user.id
+                appeal["review_ts"]   = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            return data
+
+        await store.update(mutate)
+
+        # Disable buttons after decision
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        # DM an den Antragsteller
+        member = interaction.guild.get_member(self.user_id)
+        if member:
+            color  = discord.Color.green() if new_status == "accepted" else discord.Color.red()
+            status = "✅ angenommen" if new_status == "accepted" else "❌ abgelehnt"
+            try:
+                await member.send(embed=discord.Embed(
+                    title=f"📩 Einspruch {status}",
+                    description=(
+                        f"Dein Einspruch zu Fall **#{self.case_id}** wurde von "
+                        f"{interaction.user.mention} **{status}**."
+                    ),
+                    color=color,
+                    timestamp=datetime.datetime.now(datetime.timezone.utc),
+                ))
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+    @discord.ui.button(label="✅ Annehmen", style=discord.ButtonStyle.success)
+    async def accept_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await self._update(interaction, "accepted")
+
+    @discord.ui.button(label="❌ Ablehnen", style=discord.ButtonStyle.danger)
+    async def deny_btn(self, interaction: discord.Interaction, _: discord.ui.Button) -> None:
+        await self._update(interaction, "denied")
+
+
+class Cases(commands.Cog):
+    """Vollständiges Case-Verwaltungssystem mit Kommentaren und Einsprüchen."""
+
+    cases_group   = app_commands.Group(name="case",   description="Fallverwaltung — Moderationshistorie.")
+    appeals_group = app_commands.Group(name="appeal", description="Einsprüche gegen Moderationsmaßnahmen.")
+
+    def __init__(self, bot: commands.Bot):
+        self.bot          = bot
+        self.store        = JSONStore(CASES_PATH,   {})
+        self.appeal_store = JSONStore(APPEALS_PATH, {})
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Hilfsmethoden
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def create_case(
+        self,
+        guild_id:  int,
+        user_id:   int,
+        mod_id:    int,
+        action:    str,
+        reason:    str,
+        extra:     dict | None = None,
+    ) -> int:
+        """
+        Legt einen neuen Fall an und gibt die Fall-ID zurück.
+        Wird von anderen Cogs (Moderation, Ban, etc.) aufgerufen.
+        """
+        def mutate(data: dict) -> dict:
+            guild_data = data.setdefault(str(guild_id), {"cases": {}})
+            case_id    = _next_case_id(guild_data)
+            guild_data["cases"][str(case_id)] = {
+                "id":        case_id,
+                "action":    action,
+                "user_id":   user_id,
+                "mod_id":    mod_id,
+                "reason":    reason or "Kein Grund angegeben",
+                "comments":  [],          # Liste von {author_id, text, ts}
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                **(extra or {}),
+            }
+            return data
+
+        result  = await self.store.update(mutate)
+        guild_d = result.get(str(guild_id), {})
+        cases   = guild_d.get("cases", {})
+        return max(int(k) for k in cases if k.isdigit())
+
+    def _case_embed(self, case: dict, case_id: int) -> discord.Embed:
+        """Erstellt ein formatiertes Embed für einen einzelnen Fall."""
+        action   = case.get("action", "note")
+        emoji, color = CASE_ACTIONS.get(action, ("📋", discord.Color.blurple()))
+        embed = discord.Embed(
+            title       = f"{emoji} Fall #{case_id} — {action.upper()}",
+            description = case.get("reason", "—"),
+            color       = color,
+            timestamp   = datetime.datetime.fromisoformat(case["timestamp"])
+                          if "timestamp" in case else discord.utils.utcnow(),
+        )
+        embed.add_field(name="👤 Nutzer",       value=f"<@{case['user_id']}>",  inline=True)
+        embed.add_field(name="🛡️ Moderator",   value=f"<@{case['mod_id']}>",   inline=True)
+        comments = case.get("comments", [])
+        if comments:
+            last = comments[-1]
+            embed.add_field(
+                name  = f"💬 Letzter Kommentar ({len(comments)} total)",
+                value = f"<@{last['author_id']}>: {last['text'][:200]}",
+                inline=False,
+            )
+        embed.set_footer(text="AVOKE │ Case System")
+        return embed
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /case Gruppe
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @cases_group.command(name="view", description="Zeigt einen bestimmten Fall an.")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def case_view(self, interaction: discord.Interaction, fall_id: int) -> None:
+        data  = await self.store.read()
+        cases = data.get(str(interaction.guild.id), {}).get("cases", {})
+        case  = cases.get(str(fall_id))
+        if not case:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Fall nicht gefunden", f"Kein Fall mit ID **#{fall_id}** vorhanden."),
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(embed=self._case_embed(case, fall_id), ephemeral=True)
+
+    @cases_group.command(name="list", description="Listet alle Fälle eines Mitglieds auf.")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def case_list(self, interaction: discord.Interaction, mitglied: discord.Member) -> None:
+        data  = await self.store.read()
+        cases = data.get(str(interaction.guild.id), {}).get("cases", {})
+        # Alle Fälle dieses Nutzers filtern
+        user_cases = [
+            (int(cid), c) for cid, c in cases.items()
+            if c.get("user_id") == mitglied.id
+        ]
+        user_cases.sort(key=lambda x: x[0], reverse=True)
+
+        if not user_cases:
+            await interaction.response.send_message(
+                embed=info_embed(f"📋 Fälle — {mitglied.display_name}", "Keine Fälle vorhanden."),
+                ephemeral=True,
+            )
+            return
+
+        lines = []
+        for cid, c in user_cases[:20]:
+            emoji, _ = CASE_ACTIONS.get(c["action"], ("📋", None))
+            ts       = c["timestamp"][:10] if "timestamp" in c else "?"
+            mod      = f"<@{c['mod_id']}>"
+            lines.append(f"`#{cid}` {emoji} **{c['action'].upper()}** — {ts} — von {mod}")
+
+        embed = info_embed(
+            f"📋 Fallhistorie — {mitglied.display_name}",
+            "\n".join(lines),
+        )
+        embed.add_field(name="Gesamt", value=str(len(user_cases)), inline=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @cases_group.command(name="comment", description="Fügt einen Kommentar zu einem Fall hinzu.")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def case_comment(
+        self,
+        interaction: discord.Interaction,
+        fall_id:     int,
+        kommentar:   app_commands.Range[str, 1, 500],
+    ) -> None:
+        data  = await self.store.read()
+        cases = data.get(str(interaction.guild.id), {}).get("cases", {})
+        if str(fall_id) not in cases:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Fall nicht gefunden"), ephemeral=True
+            )
+            return
+
+        def mutate(d: dict) -> dict:
+            d[str(interaction.guild.id)]["cases"][str(fall_id)]["comments"].append({
+                "author_id": interaction.user.id,
+                "text":      kommentar,
+                "ts":        datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            })
+            return d
+
+        await self.store.update(mutate)
+        await interaction.response.send_message(
+            embed=success_embed("💬 Kommentar hinzugefügt", f"Fall **#{fall_id}** wurde kommentiert."),
+            ephemeral=True,
+        )
+
+    @cases_group.command(name="edit", description="Bearbeitet den Grund eines Falls nachträglich.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def case_edit(
+        self,
+        interaction: discord.Interaction,
+        fall_id:     int,
+        neuer_grund: app_commands.Range[str, 1, 500],
+    ) -> None:
+        data  = await self.store.read()
+        cases = data.get(str(interaction.guild.id), {}).get("cases", {})
+        if str(fall_id) not in cases:
+            await interaction.response.send_message(embed=error_embed("❌ Fall nicht gefunden"), ephemeral=True)
+            return
+
+        def mutate(d: dict) -> dict:
+            d[str(interaction.guild.id)]["cases"][str(fall_id)]["reason"]   = neuer_grund
+            d[str(interaction.guild.id)]["cases"][str(fall_id)]["edited_by"] = interaction.user.id
+            d[str(interaction.guild.id)]["cases"][str(fall_id)]["edited_at"] = \
+                datetime.datetime.now(datetime.timezone.utc).isoformat()
+            return d
+
+        await self.store.update(mutate)
+        await interaction.response.send_message(
+            embed=success_embed("✏️ Fall bearbeitet", f"Grund für Fall **#{fall_id}** aktualisiert."),
+            ephemeral=True,
+        )
+
+    @cases_group.command(name="delete", description="Löscht einen Fall dauerhaft (Owner-Only).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def case_delete(self, interaction: discord.Interaction, fall_id: int) -> None:
+        def mutate(d: dict) -> dict:
+            d.get(str(interaction.guild.id), {}).get("cases", {}).pop(str(fall_id), None)
+            return d
+
+        await self.store.update(mutate)
+        await interaction.response.send_message(
+            embed=success_embed("🗑️ Fall gelöscht", f"Fall **#{fall_id}** wurde dauerhaft entfernt."),
+            ephemeral=True,
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # /appeal Gruppe
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @appeals_group.command(name="submit", description="Reiche einen Einspruch gegen einen deiner Fälle ein.")
+    async def appeal_submit(self, interaction: discord.Interaction, fall_id: int) -> None:
+        # Prüfen ob der Fall dem anfragenden Nutzer gehört
+        data  = await self.store.read()
+        cases = data.get(str(interaction.guild.id), {}).get("cases", {})
+        case  = cases.get(str(fall_id))
+        if not case or case["user_id"] != interaction.user.id:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Kein Zugriff", "Du kannst nur gegen deine eigenen Fälle Einspruch einlegen."),
+                ephemeral=True,
+            )
+            return
+
+        # Prüfen ob bereits ein offener Einspruch besteht
+        appeals = await self.appeal_store.read()
+        existing = appeals.get(str(interaction.guild.id), {}).get(str(fall_id))
+        if existing and existing["status"] == "pending":
+            await interaction.response.send_message(
+                embed=warning_embed("⏳ Einspruch ausstehend", "Du hast für diesen Fall bereits einen offenen Einspruch."),
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_modal(AppealModal(fall_id, interaction.guild.id))
+
+    @appeals_group.command(name="list", description="Listet alle ausstehenden Einsprüche (Moderatoren).")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def appeal_list(self, interaction: discord.Interaction) -> None:
+        appeals = await self.appeal_store.read()
+        guild_appeals = appeals.get(str(interaction.guild.id), {})
+        pending = [(cid, a) for cid, a in guild_appeals.items() if a["status"] == "pending"]
+
+        if not pending:
+            await interaction.response.send_message(
+                embed=info_embed("📩 Einsprüche", "Keine ausstehenden Einsprüche vorhanden."),
+                ephemeral=True,
+            )
+            return
+
+        lines = [
+            f"`Fall #{cid}` — <@{a['user_id']}> — {a['submitted'][:10]}"
+            for cid, a in pending[:20]
+        ]
+        await interaction.response.send_message(
+            embed=info_embed("📩 Ausstehende Einsprüche", "\n".join(lines)),
+            ephemeral=True,
+        )
+
+    @appeals_group.command(name="review", description="Prüft einen Einspruch und zeigt Annehmen/Ablehnen-Buttons.")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def appeal_review(self, interaction: discord.Interaction, fall_id: int) -> None:
+        appeals = await self.appeal_store.read()
+        appeal  = appeals.get(str(interaction.guild.id), {}).get(str(fall_id))
+        if not appeal:
+            await interaction.response.send_message(
+                embed=error_embed("❌ Kein Einspruch", f"Für Fall **#{fall_id}** liegt kein Einspruch vor."),
+                ephemeral=True,
+            )
+            return
+
+        status_text = APPEAL_STATUS.get(appeal["status"], appeal["status"])
+        embed = dark_embed(
+            f"📩 Einspruch — Fall #{fall_id}",
+            appeal["reason"],
+        )
+        embed.add_field(name="Antragsteller", value=f"<@{appeal['user_id']}>",  inline=True)
+        embed.add_field(name="Status",         value=status_text,               inline=True)
+        embed.add_field(name="Eingereicht",    value=appeal["submitted"][:16],  inline=True)
+
+        view = (
+            AppealReviewView(fall_id, interaction.guild.id, appeal["user_id"])
+            if appeal["status"] == "pending"
+            else discord.ui.View()
+        )
+        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(Cases(bot))

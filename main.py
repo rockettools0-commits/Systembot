@@ -100,10 +100,17 @@ class AVOKEBot(commands.Bot):
             "cogs.ticket_gui",    # Ticket-Setup als moderne Button/Select-GUI
             "cogs.owner_admin",   # Owner-Only Verwaltungscommands (!restart, !stats, ...)
             "cogs.dashboard",     # Live CMD-Dashboard
+            "cogs.control_panel", # Interaktives Discord-Control-Center
+            "cogs.automation",    # Visueller Automation-Builder mit Buttons/Modals
             "cogs.changelog",     # !changelog: Ueberblick ueber Neuerungen
             "cogs.system_tools",  # !system: Wartung, Health-Check und Backups
             "cogs.owner_panel",   # /owner-*: vollständiges Owner Slash-Panel
             "cogs.mc_verify",     # /mc verify/status/unlink/whois/list
+            # ── Neue Systeme ────────────────────────────────────────────────
+            "cogs.cases",         # Case-System mit Kommentaren und Einsprüchen
+            "cogs.ticket_sla",    # Ticket-SLA, Supporter-Analytics und Auto-Close
+            "cogs.captcha",       # Captcha, Quarantäne und Alt-Account-Erkennung
+            "cogs.antinuke",      # Anti-Nuke via Audit-Log-Auswertung
         ]
         for cog in cogs:
             try:
@@ -189,7 +196,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
 
-    # Owner-Only Commands (z.B. !restart, !stats, ...) → freundliche Fehlermeldung
+    # Owner-Only Commands → freundliche Fehlermeldung
     if isinstance(error, (commands.NotOwner, commands.CheckFailure)):
         try:
             await ctx.send("❌ Keine Berechtigung.")
@@ -211,7 +218,28 @@ async def on_command_error(ctx, error):
             pass
         return
 
-    log_command.exception(f"Prefix-Command-Fehler in !{ctx.command}: {error}")
+    if isinstance(error, commands.CommandOnCooldown):
+        try:
+            await ctx.send(f"⏳ Cooldown — bitte warte noch {error.retry_after:.1f}s.")
+        except discord.HTTPException:
+            pass
+        return
+
+    log_command.exception("Prefix-Command-Fehler in !%s: %s", ctx.command, error)
+
+
+@bot.event
+async def on_error(event: str, *args, **kwargs) -> None:
+    """
+    Globaler asyncio-Fehler-Handler für alle Events.
+    Verhindert dass unbehandelte Ausnahmen den Bot abstürzen lassen.
+    """
+    import sys
+    log_system.exception(
+        "Unbehandelte Ausnahme in Event '%s' — args=%s",
+        event, args[:2],
+        exc_info=sys.exc_info(),
+    )
 
 
 async def main():

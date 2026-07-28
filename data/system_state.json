@@ -1,4 +1,4 @@
 {
-  "maintenance": true,
-  "message": "Das System befindet sich in Wartung."
+  "maintenance": false,
+  "message": ""
 }
