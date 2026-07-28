@@ -22,6 +22,7 @@ from utils.storage import JSONStore
 from utils.theme import error_embed, info_embed, success_embed, warning_embed
 
 CONFIG_PATH = "data/security_config.json"
+HISTORY_PATH = "data/security_history.json"
 
 RULES = {
     "invite": "Discord-Einladungen",
@@ -60,6 +61,7 @@ def _guild_config(data: dict[str, Any], guild_id: int) -> dict[str, Any]:
         "spam_limit": max(2, min(int(stored.get("spam_limit", 6)), 20)),
         "spam_window": max(2, min(int(stored.get("spam_window", 8)), 60)),
         "log_channel_id": stored.get("log_channel_id"),
+        "emergency": stored.get("emergency", False),
         "trusted_users": set(stored.get("trusted_users", [])),
         "trusted_roles": set(stored.get("trusted_roles", [])),
     }
@@ -73,6 +75,7 @@ class Security(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.store = JSONStore(CONFIG_PATH, default_config())
+        self.history_store = JSONStore(HISTORY_PATH, {})
         self._cache: dict[int, dict[str, Any]] = {}
         self._message_times: dict[tuple[int, int], deque[float]] = defaultdict(deque)
         self._duplicates: dict[tuple[int, int], deque[tuple[float, str]]] = defaultdict(deque)
@@ -144,6 +147,16 @@ class Security(commands.Cog):
         except discord.HTTPException:
             pass
 
+    async def _record_incident(self, guild_id: int, member_id: int, reason: str, risk: int, action: str) -> None:
+        entry = {"user_id": member_id, "reason": reason, "risk": risk, "action": action,
+                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+        def mutate(data: dict[str, Any]) -> dict[str, Any]:
+            items = data.setdefault(str(guild_id), [])
+            items.append(entry)
+            data[str(guild_id)] = items[-100:]  # begrenzte, datensparsame Historie
+            return data
+        await self.history_store.update(mutate)
+
     async def _respond(self, message: discord.Message, reason: str, risk: int, config: dict[str, Any]) -> None:
         try:
             await message.delete()
@@ -156,6 +169,7 @@ class Security(commands.Cog):
                 await message.author.timeout(until, reason=f"Security: {reason}")
             except (discord.Forbidden, discord.HTTPException):
                 action = "delete"
+        await self._record_incident(message.guild.id, message.author.id, reason, risk, action)
         await self._audit(message.guild, "🛡️ Bedrohung abgewehrt", f"**Mitglied:** {message.author.mention}\n**Regel:** {reason}\n**Risiko:** {risk}/100\n**Aktion:** {action}", discord.Color.red())
 
     @commands.Cog.listener()
@@ -169,6 +183,17 @@ class Security(commands.Cog):
         if finding:
             reason, risk = finding
             await self._respond(message, reason, risk, config)
+
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member) -> None:
+        """Notfallmodus meldet neue, sehr junge Accounts sichtbar im Security-Audit."""
+        config = await self._config(member.guild.id)
+        if not config["emergency"]:
+            return
+        age = datetime.datetime.now(datetime.timezone.utc) - member.created_at
+        if age < datetime.timedelta(days=7):
+            await self._record_incident(member.guild.id, member.id, "Neuer Account während Notfallmodus", 65, "audit")
+            await self._audit(member.guild, "⚠️ Neuer Account im Notfallmodus", f"**Mitglied:** {member.mention}\n**Account-Alter:** {age.days} Tage\n**Empfehlung:** vor Freigabe prüfen.", discord.Color.orange())
 
     @security.command(name="status", description="Zeigt den Sicherheitsstatus dieses Servers.")
     @app_commands.checks.has_permissions(administrator=True)
@@ -227,6 +252,52 @@ class Security(commands.Cog):
         self._invalidate(interaction.guild.id)
         target = nutzer.mention if nutzer else rolle.mention
         await interaction.response.send_message(embed=success_embed("✅ Als vertrauenswürdig markiert", target), ephemeral=True)
+
+    @security.command(name="untrust", description="Entfernt einen Nutzer oder eine Rolle aus der Trusted-Liste.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def untrust(self, interaction: discord.Interaction, nutzer: discord.Member | None = None, rolle: discord.Role | None = None) -> None:
+        if (nutzer is None) == (rolle is None):
+            await interaction.response.send_message(embed=error_embed("❌ Auswahl erforderlich", "Wähle genau einen Nutzer oder eine Rolle."), ephemeral=True)
+            return
+        key, value = ("trusted_users", nutzer.id) if nutzer else ("trusted_roles", rolle.id)
+        def mutate(data: dict[str, Any]) -> dict[str, Any]:
+            values = data.setdefault(str(interaction.guild.id), {}).setdefault(key, [])
+            if value in values: values.remove(value)
+            return data
+        await self.store.update(mutate)
+        self._invalidate(interaction.guild.id)
+        await interaction.response.send_message(embed=success_embed("✅ Trusted-Status entfernt"), ephemeral=True)
+
+    @security.command(name="incidents", description="Zeigt die letzten Security-Vorfälle.")
+    @app_commands.checks.has_permissions(moderate_members=True)
+    async def incidents(self, interaction: discord.Interaction) -> None:
+        items = (await self.history_store.read()).get(str(interaction.guild.id), [])[-10:]
+        if not items:
+            await interaction.response.send_message(embed=info_embed("🛡️ Security Incidents", "Bisher wurden keine Vorfälle gespeichert."), ephemeral=True)
+            return
+        lines = [f"• <@{item['user_id']}> — **{item['reason']}** · Risiko {item['risk']}/100 · `{item['action']}`" for item in reversed(items)]
+        await interaction.response.send_message(embed=warning_embed("🛡️ Letzte Security-Vorfälle", "\n".join(lines)), ephemeral=True)
+
+    @security.command(name="score", description="Bewertet die aktuelle Sicherheitskonfiguration.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def score(self, interaction: discord.Interaction) -> None:
+        config = await self._config(interaction.guild.id)
+        enabled = sum(config["rules"].values())
+        score = enabled * 8 + (15 if config["log_channel_id"] else 0) + (8 if config["action"] == "timeout" else 0) + (5 if config["emergency"] else 0)
+        score = min(score, 100)
+        grade = "Sehr gut" if score >= 85 else "Gut" if score >= 65 else "Ausbaufähig"
+        await interaction.response.send_message(embed=info_embed("🛡️ Security Score", f"**{score}/100 — {grade}**\nAktive Regeln: {enabled}/{len(RULES)}\nAudit-Log: {'aktiv' if config['log_channel_id'] else 'nicht gesetzt'}"), ephemeral=True)
+
+    @security.command(name="emergency", description="Aktiviert oder deaktiviert den Security-Notfallmodus.")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def emergency(self, interaction: discord.Interaction, aktiv: bool) -> None:
+        def mutate(data: dict[str, Any]) -> dict[str, Any]:
+            data.setdefault(str(interaction.guild.id), {})["emergency"] = aktiv
+            return data
+        await self.store.update(mutate)
+        self._invalidate(interaction.guild.id)
+        text = "Neue sehr junge Accounts werden jetzt im Audit hervorgehoben." if aktiv else "Der normale Schutzmodus läuft weiter."
+        await interaction.response.send_message(embed=(warning_embed if aktiv else success_embed)(f"🚨 Notfallmodus {'aktiviert' if aktiv else 'deaktiviert'}", text), ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

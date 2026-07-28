@@ -368,6 +368,62 @@ class Tickets(commands.Cog):
             ephemeral=True,
         )
 
+    async def _current_ticket(self, interaction: discord.Interaction):
+        """Liefert Ticketdaten und ob der Nutzer zum Support gehört."""
+        info = (await self.open_store.read()).get(str(interaction.channel_id))
+        if not info:
+            return None, False
+        member = interaction.user
+        support = member.guild_permissions.administrator or bool(
+            {role.id for role in member.roles} & set(info.get("support_role_ids", []))
+        )
+        return info, support
+
+    @ticket.command(name="claim", description="Übernimmt das aktuelle Ticket als Bearbeiter.")
+    async def ticket_claim(self, interaction: discord.Interaction):
+        info, support = await self._current_ticket(interaction)
+        if not info:
+            await interaction.response.send_message("❌ Dies ist kein offenes Ticket.", ephemeral=True); return
+        if not support:
+            await interaction.response.send_message("❌ Nur das Support-Team kann Tickets übernehmen.", ephemeral=True); return
+        def mutate(data):
+            data[str(interaction.channel_id)]["claimed_by"] = interaction.user.id
+            return data
+        await self.open_store.update(mutate)
+        await interaction.response.send_message(embed=discord.Embed(title="🛠️ Ticket übernommen", description=f"{interaction.user.mention} bearbeitet dieses Ticket jetzt.", color=discord.Color.green()))
+
+    @ticket.command(name="priority", description="Setzt die Priorität des aktuellen Tickets.")
+    @app_commands.choices(stufe=[
+        app_commands.Choice(name="🟢 Niedrig", value="niedrig"), app_commands.Choice(name="🟡 Normal", value="normal"),
+        app_commands.Choice(name="🟠 Hoch", value="hoch"), app_commands.Choice(name="🔴 Dringend", value="dringend")])
+    async def ticket_priority(self, interaction: discord.Interaction, stufe: str):
+        info, support = await self._current_ticket(interaction)
+        if not info or not support:
+            await interaction.response.send_message("❌ Nur das Support-Team kann die Priorität setzen.", ephemeral=True); return
+        def mutate(data):
+            data[str(interaction.channel_id)]["priority"] = stufe
+            return data
+        await self.open_store.update(mutate)
+        await interaction.response.send_message(f"🏷️ Ticket-Priorität gesetzt: **{stufe.title()}**")
+
+    @ticket.command(name="add", description="Gibt einem Mitglied Zugriff auf das aktuelle Ticket.")
+    async def ticket_add(self, interaction: discord.Interaction, mitglied: discord.Member):
+        info, support = await self._current_ticket(interaction)
+        if not info or not support:
+            await interaction.response.send_message("❌ Nur das Support-Team kann Mitglieder hinzufügen.", ephemeral=True); return
+        await interaction.channel.set_permissions(mitglied, view_channel=True, send_messages=True, read_message_history=True, reason=f"Zu Ticket hinzugefügt von {interaction.user}")
+        await interaction.response.send_message(f"✅ {mitglied.mention} wurde hinzugefügt.")
+
+    @ticket.command(name="remove", description="Entfernt ein Mitglied aus dem aktuellen Ticket.")
+    async def ticket_remove(self, interaction: discord.Interaction, mitglied: discord.Member):
+        info, support = await self._current_ticket(interaction)
+        if not info or not support:
+            await interaction.response.send_message("❌ Nur das Support-Team kann Mitglieder entfernen.", ephemeral=True); return
+        if mitglied.id == info.get("user_id"):
+            await interaction.response.send_message("❌ Der Ticket-Ersteller kann nicht entfernt werden.", ephemeral=True); return
+        await interaction.channel.set_permissions(mitglied, overwrite=None, reason=f"Aus Ticket entfernt von {interaction.user}")
+        await interaction.response.send_message(f"✅ {mitglied.mention} wurde entfernt.")
+
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         if isinstance(error, app_commands.MissingPermissions):
             await interaction.response.send_message(

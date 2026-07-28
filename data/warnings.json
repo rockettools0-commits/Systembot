@@ -23,6 +23,26 @@
   },
   "1507493310690889758": {
     "1188894321840238692": [],
-    "1509421939352010845": []
+    "1509421939352010845": [],
+    "1048647374974763038": [
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Verbotenes Wort",
+        "timestamp": "2026-07-27T21:48:45.062887+00:00"
+      },
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Discord-Invite-Link",
+        "timestamp": "2026-07-27T21:48:58.577184+00:00"
+      },
+      {
+        "moderator": "Automod",
+        "moderator_id": 1515916782773211246,
+        "grund": "Discord-Invite-Link",
+        "timestamp": "2026-07-27T21:49:04.725230+00:00"
+      }
+    ]
   }
 }

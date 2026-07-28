@@ -492,6 +492,46 @@ class Moderation(commands.Cog):
                                 f"`{einstellung}` wurde auf **{wert}** gesetzt."),
             ephemeral=True)
 
+    @app_commands.command(name="automod-preset", description="Aktiviert ein fertiges Automod-Schutzprofil.")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.choices(profil=[
+        app_commands.Choice(name="🟢 Normal — ausgewogener Schutz", value="normal"),
+        app_commands.Choice(name="🟠 Streng — geringe Toleranz", value="strict"),
+        app_commands.Choice(name="🚨 Raid — maximaler Sofortschutz", value="raid"),
+    ])
+    async def automod_preset(self, interaction: discord.Interaction, profil: str):
+        presets = {
+            "normal": {"max_mentions": 5, "max_emojis": 10, "min_caps_length": 10},
+            "strict": {"max_mentions": 3, "max_emojis": 6, "min_caps_length": 8},
+            "raid": {"max_mentions": 1, "max_emojis": 4, "min_caps_length": 6},
+        }
+        def mutate(data):
+            cfg = data.setdefault(str(interaction.guild.id), {})
+            cfg.update(presets[profil])
+            cfg.update({key: True for key in ("link_filter", "invite_filter", "mention_filter", "caps_filter", "emoji_filter", "repeat_filter", "zalgo_filter", "attachment_filter")})
+            return data
+        await self.automod_store.update(mutate)
+        self._invalidate_cache(str(interaction.guild.id))
+        await interaction.response.send_message(embed=success_embed("🛡️ Automod-Profil aktiv", f"**{profil.title()}** wurde angewendet."), ephemeral=True)
+
+    @app_commands.command(name="automod-exempt", description="Verwaltet Ausnahmen für Automod (Nutzer, Rolle oder Kanal).")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.choices(aktion=[app_commands.Choice(name="➕ Hinzufügen", value="add"), app_commands.Choice(name="➖ Entfernen", value="remove")])
+    async def automod_exempt(self, interaction: discord.Interaction, aktion: str, nutzer: discord.Member | None = None, rolle: discord.Role | None = None, kanal: discord.TextChannel | None = None):
+        chosen = [("exempt_users", nutzer.id if nutzer else None), ("exempt_roles", rolle.id if rolle else None), ("exempt_channels", kanal.id if kanal else None)]
+        selected = [(key, value) for key, value in chosen if value is not None]
+        if len(selected) != 1:
+            await interaction.response.send_message(embed=error_embed("❌ Auswahl erforderlich", "Wähle genau einen Nutzer, eine Rolle oder einen Kanal."), ephemeral=True); return
+        key, value = selected[0]
+        def mutate(data):
+            values = data.setdefault(str(interaction.guild.id), {}).setdefault(key, [])
+            if aktion == "add" and value not in values: values.append(value)
+            if aktion == "remove" and value in values: values.remove(value)
+            return data
+        await self.automod_store.update(mutate)
+        self._invalidate_cache(str(interaction.guild.id))
+        await interaction.response.send_message(embed=success_embed("✅ Automod-Ausnahme aktualisiert"), ephemeral=True)
+
     @app_commands.command(name="lockdown",
                           description="Aktiviert oder deaktiviert den Server-Lockdown (kein Schreiben).")
     @app_commands.describe(aktiv="An = Lockdown, Aus = Normal")
@@ -1300,6 +1340,12 @@ class Moderation(commands.Cog):
 
         guild_id = str(message.guild.id)
         cfg      = await self._get_automod_config(guild_id)
+        if message.channel.id in cfg.get("exempt_channels", []):
+            return
+        if message.author.id in cfg.get("exempt_users", []):
+            return
+        if {role.id for role in message.author.roles} & set(cfg.get("exempt_roles", [])):
+            return
         content  = message.content
         lower    = content.lower()
         violated = False

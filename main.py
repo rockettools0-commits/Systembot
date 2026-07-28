@@ -80,6 +80,7 @@ class AVOKEBot(commands.Bot):
             "cogs.roles",
             "cogs.moderation",
             "cogs.security",          # Enterprise Security: Risikoanalyse, Audit-Logs, Trusted-Listen
+            "cogs.community",         # Vorschläge, Reports, Events, Reputation und Sticky-Nachrichten
             "cogs.logging_cog",
             "cogs.giveaways",
             "cogs.rank",
