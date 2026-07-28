@@ -43,6 +43,7 @@ class ReactionRoleView(discord.ui.View):
 
 
 class Community(commands.Cog):
+    community = app_commands.Group(name="community", description="Vorschläge, Meldungen und Mitglieder-Features.")
     event = app_commands.Group(name="event", description="Events planen und verwalten.")
     sticky = app_commands.Group(name="sticky", description="Sticky-Nachrichten verwalten.")
     reputation = app_commands.Group(name="reputation", description="Community-Reputation.")
@@ -68,7 +69,7 @@ class Community(commands.Cog):
         self.event_reminders.cancel()
         self.birthday_greetings.cancel()
 
-    @app_commands.command(name="reactionrole-setup", description="Erstellt einen Button, über den Mitglieder eine Rolle wählen.")
+    @community.command(name="reactionrole", description="Erstellt einen Button, über den Mitglieder eine Rolle wählen.")
     @app_commands.checks.has_permissions(manage_roles=True)
     async def reactionrole_setup(self, interaction: discord.Interaction, kanal: discord.TextChannel, rolle: discord.Role, titel: app_commands.Range[str, 1, 100] = "Rollen-Auswahl") -> None:
         if rolle >= interaction.guild.me.top_role:
@@ -84,7 +85,7 @@ class Community(commands.Cog):
         self.bot.add_view(view)
         await interaction.response.send_message(embed=success_embed("✅ Rollen-Button erstellt", kanal.mention), ephemeral=True)
 
-    @app_commands.command(name="suggestion", description="Reiche einen Vorschlag für den Server ein.")
+    @community.command(name="suggestion", description="Reiche einen Vorschlag für den Server ein.")
     async def suggestion(self, interaction: discord.Interaction, text: app_commands.Range[str, 5, 1000]) -> None:
         guild_id = str(interaction.guild.id)
         config = await self.config.read()
@@ -105,13 +106,13 @@ class Community(commands.Cog):
         await self.suggestions.update(mutate)
         await interaction.response.send_message(embed=success_embed("✅ Vorschlag eingereicht", f"Dein Vorschlag wurde in {channel.mention} veröffentlicht."), ephemeral=True)
 
-    @app_commands.command(name="suggestion-setup", description="Setzt den Kanal für Community-Vorschläge.")
+    @community.command(name="suggestion-setup", description="Setzt den Kanal für Community-Vorschläge.")
     @app_commands.checks.has_permissions(administrator=True)
     async def suggestion_setup(self, interaction: discord.Interaction, kanal: discord.TextChannel) -> None:
         await self._set_config(interaction.guild.id, "suggestion_channel_id", kanal.id)
         await interaction.response.send_message(embed=success_embed("✅ Vorschlagskanal gesetzt", kanal.mention), ephemeral=True)
 
-    @app_commands.command(name="report", description="Melde einen Nutzer vertraulich an das Team.")
+    @community.command(name="report", description="Melde einen Nutzer vertraulich an das Team.")
     async def report(self, interaction: discord.Interaction, nutzer: discord.Member, grund: app_commands.Range[str, 3, 1000]) -> None:
         config = await self.config.read()
         channel_id = config.get(str(interaction.guild.id), {}).get("report_channel_id")
@@ -123,7 +124,7 @@ class Community(commands.Cog):
         await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
         await interaction.response.send_message(embed=success_embed("✅ Meldung gesendet", "Das Team wurde vertraulich informiert."), ephemeral=True)
 
-    @app_commands.command(name="report-setup", description="Setzt den privaten Kanal für Meldungen.")
+    @community.command(name="report-setup", description="Setzt den privaten Kanal für Meldungen.")
     @app_commands.checks.has_permissions(administrator=True)
     async def report_setup(self, interaction: discord.Interaction, kanal: discord.TextChannel) -> None:
         await self._set_config(interaction.guild.id, "report_channel_id", kanal.id)
@@ -170,7 +171,7 @@ class Community(commands.Cog):
     async def before_event_reminders(self) -> None:
         await self.bot.wait_until_ready()
 
-    @app_commands.command(name="birthday", description="Speichere deinen Geburtstag für automatische Glückwünsche.")
+    @community.command(name="birthday", description="Speichere deinen Geburtstag für automatische Glückwünsche.")
     async def birthday(self, interaction: discord.Interaction, tag: app_commands.Range[int, 1, 31], monat: app_commands.Range[int, 1, 12]) -> None:
         try: datetime.date(2024, monat, tag)
         except ValueError:
@@ -181,7 +182,7 @@ class Community(commands.Cog):
         await self.birthdays.update(mutate)
         await interaction.response.send_message(embed=success_embed("🎂 Geburtstag gespeichert", f"{tag:02d}.{monat:02d}."), ephemeral=True)
 
-    @app_commands.command(name="birthday-setup", description="Setzt den Kanal für automatische Geburtstagsgrüße.")
+    @community.command(name="birthday-setup", description="Setzt den Kanal für automatische Geburtstagsgrüße.")
     @app_commands.checks.has_permissions(administrator=True)
     async def birthday_setup(self, interaction: discord.Interaction, kanal: discord.TextChannel) -> None:
         await self._set_config(interaction.guild.id, "birthday_channel_id", kanal.id)
@@ -232,7 +233,7 @@ class Community(commands.Cog):
         text = "\n".join(f"{index}. <@{uid}> — **{entry['points']}** 🌟" for index, (uid, entry) in enumerate(top, 1)) or "Noch keine Reputation vergeben."
         await interaction.response.send_message(embed=info_embed("🌟 Reputation-Rangliste", text))
 
-    @app_commands.command(name="membercard", description="Zeigt eine kompakte Member-Card.")
+    @community.command(name="membercard", description="Zeigt eine kompakte Member-Card.")
     async def membercard(self, interaction: discord.Interaction, nutzer: discord.Member | None = None) -> None:
         member = nutzer or interaction.user
         reputation = (await self.reputation_store.read()).get(str(interaction.guild.id), {}).get(str(member.id), {}).get("points", 0)

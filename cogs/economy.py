@@ -19,26 +19,26 @@ from utils.storage import JSONStore
 from utils.theme import gold_embed, error_embed, info_embed, success_embed, warning_embed, COLOR_GOLD
 
 ECONOMY_PATH = "data/economy.json"
-DAILY_COOLDOWN_HOURS   = 20
-DAILY_REWARD_MIN       = 150
-DAILY_REWARD_MAX       = 350
+DAILY_COOLDOWN_HOURS   = 24
+DAILY_REWARD_MIN       = 1500
+DAILY_REWARD_MAX       = 3500
 WORK_COOLDOWN_MINUTES  = 30
-WORK_REWARD_MIN        = 50
-WORK_REWARD_MAX        = 180
+WORK_REWARD_MIN        = 500
+WORK_REWARD_MAX        = 1800
 CRIME_COOLDOWN_MINUTES = 60
-CRIME_REWARD_MIN       = 80
-CRIME_REWARD_MAX       = 400
-CRIME_FINE_MIN         = 50
-CRIME_FINE_MAX         = 200
-CRIME_SUCCESS_CHANCE   = 0.65
+CRIME_REWARD_MIN       = 800
+CRIME_REWARD_MAX       = 4000
+CRIME_FINE_MIN         = 500
+CRIME_FINE_MAX         = 2000
+CRIME_SUCCESS_CHANCE   = 0.75
 SLUT_COOLDOWN_MINUTES  = 45
-SLUT_REWARD_MIN        = 40
-SLUT_REWARD_MAX        = 150
+SLUT_REWARD_MIN        = 400
+SLUT_REWARD_MAX        = 1500
 ROB_COOLDOWN_MINUTES   = 90
-ROB_SUCCESS_CHANCE     = 0.45
-ROB_MAX_STEAL_PCT      = 0.25   # max 25% des Opfer-Guthabens
-ROB_FINE_MIN           = 100
-ROB_FINE_MAX           = 300
+ROB_SUCCESS_CHANCE     = 0.55
+ROB_MAX_STEAL_PCT      = 0.55   # max 25% des Opfer-Guthabens
+ROB_FINE_MIN           = 1000
+ROB_FINE_MAX           = 3000
 GAMBLE_COOLDOWN_SECONDS = 30
 
 WORK_MESSAGES = [
@@ -104,6 +104,7 @@ def _user_data(data: dict, guild_id: str, user_id: str) -> dict:
 
 
 class Economy(commands.Cog):
+    eco = app_commands.Group(name="eco", description="Wirtschaft, Shop und Coins.")
     def __init__(self, bot: commands.Bot):
         self.bot   = bot
         self.store = JSONStore(ECONOMY_PATH, {})
@@ -114,7 +115,7 @@ class Economy(commands.Cog):
 
     # ── /balance ──────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="balance", description="Zeigt dein oder ein fremdes Konto-Guthaben an.")
+    @eco.command(name="balance", description="Zeigt dein oder ein fremdes Konto-Guthaben an.")
     @app_commands.describe(user="User, dessen Kontostand du sehen möchtest")
     async def balance(self, interaction: discord.Interaction, user: discord.Member = None):
         target = user or interaction.user
@@ -134,7 +135,7 @@ class Economy(commands.Cog):
 
     # ── /daily ────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="daily", description="Täglicher Bonus — alle 20 Stunden einlösbar.")
+    @eco.command(name="daily", description="Täglicher Bonus — alle 20 Stunden einlösbar.")
     async def daily(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id)
         user_id  = str(interaction.user.id)
@@ -166,7 +167,7 @@ class Economy(commands.Cog):
 
     # ── /work ─────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="work", description="Arbeite für Coins — alle 30 Minuten nutzbar.")
+    @eco.command(name="work", description="Arbeite für Coins — alle 30 Minuten nutzbar.")
     async def work(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id); user_id = str(interaction.user.id)
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -197,7 +198,7 @@ class Economy(commands.Cog):
 
     # ── /crime ────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="crime", description="Begehe ein Verbrechen — riskant aber lukrativ (60 Min.).")
+    @eco.command(name="crime", description="Begehe ein Verbrechen — riskant aber lukrativ (60 Min.).")
     async def crime(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id); user_id = str(interaction.user.id)
         now = datetime.datetime.now(datetime.timezone.utc); holder: dict = {}
@@ -237,7 +238,7 @@ class Economy(commands.Cog):
 
     # ── /slut ─────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="slut", description="Verdiene Coins durch zweifelhafte Dienste (45 Min.).")
+    @eco.command(name="slut", description="Verdiene Coins durch zweifelhafte Dienste (45 Min.).")
     async def slut(self, interaction: discord.Interaction):
         guild_id = str(interaction.guild.id); user_id = str(interaction.user.id)
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -267,7 +268,7 @@ class Economy(commands.Cog):
 
     # ── /rob ──────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="rob", description="Bestehle einen anderen User (45% Erfolg, alle 90 Min.).")
+    @eco.command(name="rob", description="Bestehle einen anderen User (45% Erfolg, alle 90 Min.).")
     @app_commands.describe(opfer="Das Mitglied, das du bestehlen möchtest")
     async def rob(self, interaction: discord.Interaction, opfer: discord.Member):
         if opfer.id == interaction.user.id:
@@ -343,7 +344,7 @@ class Economy(commands.Cog):
 
     # ── /gamble ───────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="gamble", description="Setze Coins — 50% Chance auf doppelten Gewinn (30s Cooldown).")
+    @eco.command(name="gamble", description="Setze Coins — 50% Chance auf doppelten Gewinn (30s Cooldown).")
     @app_commands.describe(einsatz="Anzahl Coins die du setzen möchtest (oder 'all')")
     async def gamble(self, interaction: discord.Interaction, einsatz: str):
         guild_id = str(interaction.guild.id)
@@ -421,7 +422,7 @@ class Economy(commands.Cog):
 
     # ── /pay ──────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="pay", description="Überweise Coins an einen anderen User.")
+    @eco.command(name="pay", description="Überweise Coins an einen anderen User.")
     @app_commands.describe(empfaenger="Empfänger", betrag="Anzahl Coins")
     async def pay(self, interaction: discord.Interaction, empfaenger: discord.Member, betrag: int):
         if betrag <= 0:
@@ -454,7 +455,7 @@ class Economy(commands.Cog):
 
     # ── /give ─────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="give", description="Schenke jemandem Coins mit einer persönlichen Nachricht.")
+    @eco.command(name="give", description="Schenke jemandem Coins mit einer persönlichen Nachricht.")
     @app_commands.describe(empfaenger="Empfänger", betrag="Anzahl Coins", nachricht="Persönliche Nachricht (optional)")
     async def give(self, interaction: discord.Interaction, empfaenger: discord.Member,
                    betrag: int, nachricht: str = None):
@@ -495,7 +496,7 @@ class Economy(commands.Cog):
 
     # ── /deposit ──────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="deposit", description="Zahle Coins auf dein Bankkonto ein.")
+    @eco.command(name="deposit", description="Zahle Coins auf dein Bankkonto ein.")
     @app_commands.describe(betrag="Anzahl Coins (oder 'all')")
     async def deposit(self, interaction: discord.Interaction, betrag: str):
         guild_id = str(interaction.guild.id); user_id = str(interaction.user.id); holder: dict = {}
@@ -520,7 +521,7 @@ class Economy(commands.Cog):
 
     # ── /withdraw ─────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="withdraw", description="Hebe Coins von deinem Bankkonto ab.")
+    @eco.command(name="withdraw", description="Hebe Coins von deinem Bankkonto ab.")
     @app_commands.describe(betrag="Anzahl Coins (oder 'all')")
     async def withdraw(self, interaction: discord.Interaction, betrag: str):
         guild_id = str(interaction.guild.id); user_id = str(interaction.user.id); holder: dict = {}
@@ -545,7 +546,7 @@ class Economy(commands.Cog):
 
     # ── /shop ─────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="shop", description="Zeigt den Coin-Shop an.")
+    @eco.command(name="shop", description="Zeigt den Coin-Shop an.")
     async def shop(self, interaction: discord.Interaction):
         embed = gold_embed("🛒 Coin-Shop", "Kaufe Items mit deinen Coins!")
         for item_id, item in SHOP_ITEMS.items():
@@ -556,7 +557,7 @@ class Economy(commands.Cog):
 
     # ── /buy ──────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="buy", description="Kaufe ein Item aus dem Shop.")
+    @eco.command(name="buy", description="Kaufe ein Item aus dem Shop.")
     @app_commands.describe(item_id="Die Item-ID aus /shop")
     async def buy(self, interaction: discord.Interaction, item_id: str):
         item = SHOP_ITEMS.get(item_id.lower())
@@ -585,7 +586,7 @@ class Economy(commands.Cog):
 
     # ── /inventory ────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="inventory", description="Zeigt dein Inventar an.")
+    @eco.command(name="inventory", description="Zeigt dein Inventar an.")
     @app_commands.describe(user="Inventar eines anderen Users (optional)")
     async def inventory(self, interaction: discord.Interaction, user: discord.Member = None):
         from collections import Counter
@@ -605,7 +606,7 @@ class Economy(commands.Cog):
 
     # ── /leaderboard ──────────────────────────────────────────────────────────
 
-    @app_commands.command(name="leaderboard", description="Zeigt die Top-10 der reichsten User.")
+    @eco.command(name="leaderboard", description="Zeigt die Top-10 der reichsten User.")
     async def leaderboard(self, interaction: discord.Interaction):
         await interaction.response.defer()
         guild = interaction.guild; guild_id = str(guild.id)

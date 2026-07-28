@@ -163,6 +163,7 @@ class Moderation(commands.Cog):
 
     # ── /mod Gruppe (neue Features) ──────────────────────────────────────────
     mod = app_commands.Group(name="mod", description="Erweiterte Moderations-Werkzeuge.")
+    automod = app_commands.Group(name="automod", description="Automatische Moderation konfigurieren.")
 
     async def cog_load(self):
         self.check_mutes.start()
@@ -313,7 +314,7 @@ class Moderation(commands.Cog):
 
     # ── /automod-config ───────────────────────────────────────────────────────
 
-    @app_commands.command(name="automod-config",
+    @automod.command(name="config",
                           description="Zeigt die aktuelle Automod-Konfiguration an.")
     async def automod_config(self, interaction: discord.Interaction):
         if not await check_role_permission(interaction, "moderation"):
@@ -346,7 +347,7 @@ class Moderation(commands.Cog):
                         inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="automod-toggle",
+    @automod.command(name="toggle",
                           description="Aktiviert oder deaktiviert einen Automod-Filter.")
     @app_commands.describe(filter_name="Welcher Filter?", aktiv="An oder Aus")
     @app_commands.choices(filter_name=[
@@ -378,7 +379,7 @@ class Moderation(commands.Cog):
             embed=success_embed(f"🛡️ Filter {status}", f"`{filter_name}` wurde {status}."),
             ephemeral=True)
 
-    @app_commands.command(name="automod-badword",
+    @automod.command(name="badword",
                           description="Fügt ein Schimpfwort hinzu oder entfernt es.")
     @app_commands.describe(aktion="Hinzufügen oder Entfernen", wort="Das Wort")
     @app_commands.choices(aktion=[
@@ -419,7 +420,7 @@ class Moderation(commands.Cog):
             embed=success_embed("🚫 Wortliste aktualisiert", result["msg"]),
             ephemeral=True)
 
-    @app_commands.command(name="automod-domain",
+    @automod.command(name="domain",
                           description="Erlaubte Domain hinzufügen oder entfernen.")
     @app_commands.describe(aktion="Hinzufügen oder Entfernen", domain="z.B. youtube.com")
     @app_commands.choices(aktion=[
@@ -460,7 +461,7 @@ class Moderation(commands.Cog):
             embed=success_embed("✅ Domain-Liste aktualisiert", result["msg"]),
             ephemeral=True)
 
-    @app_commands.command(name="automod-set",
+    @automod.command(name="set",
                           description="Setzt einen numerischen Automod-Wert.")
     @app_commands.describe(
         einstellung="Was soll geändert werden?",
@@ -492,7 +493,7 @@ class Moderation(commands.Cog):
                                 f"`{einstellung}` wurde auf **{wert}** gesetzt."),
             ephemeral=True)
 
-    @app_commands.command(name="automod-preset", description="Aktiviert ein fertiges Automod-Schutzprofil.")
+    @automod.command(name="preset", description="Aktiviert ein fertiges Automod-Schutzprofil.")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.choices(profil=[
         app_commands.Choice(name="🟢 Normal — ausgewogener Schutz", value="normal"),
@@ -514,7 +515,7 @@ class Moderation(commands.Cog):
         self._invalidate_cache(str(interaction.guild.id))
         await interaction.response.send_message(embed=success_embed("🛡️ Automod-Profil aktiv", f"**{profil.title()}** wurde angewendet."), ephemeral=True)
 
-    @app_commands.command(name="automod-exempt", description="Verwaltet Ausnahmen für Automod (Nutzer, Rolle oder Kanal).")
+    @automod.command(name="exempt", description="Verwaltet Ausnahmen für Automod (Nutzer, Rolle oder Kanal).")
     @app_commands.checks.has_permissions(administrator=True)
     @app_commands.choices(aktion=[app_commands.Choice(name="➕ Hinzufügen", value="add"), app_commands.Choice(name="➖ Entfernen", value="remove")])
     async def automod_exempt(self, interaction: discord.Interaction, aktion: str, nutzer: discord.Member | None = None, rolle: discord.Role | None = None, kanal: discord.TextChannel | None = None):
@@ -532,7 +533,7 @@ class Moderation(commands.Cog):
         self._invalidate_cache(str(interaction.guild.id))
         await interaction.response.send_message(embed=success_embed("✅ Automod-Ausnahme aktualisiert"), ephemeral=True)
 
-    @app_commands.command(name="lockdown",
+    @mod.command(name="lockdown",
                           description="Aktiviert oder deaktiviert den Server-Lockdown (kein Schreiben).")
     @app_commands.describe(aktiv="An = Lockdown, Aus = Normal")
     @app_commands.checks.has_permissions(administrator=True)
@@ -573,7 +574,7 @@ class Moderation(commands.Cog):
 
     # ── Mod-Commands ─────────────────────────────────────────────────────────
 
-    @app_commands.command(name="say", description="[Mod] Lässt den Bot eine Nachricht senden.")
+    @mod.command(name="say", description="[Mod] Lässt den Bot eine Nachricht senden.")
     @app_commands.describe(kanal="Ziel-Kanal", nachricht="Die zu sendende Nachricht")
     @app_commands.checks.has_permissions(manage_messages=True)
     async def say(self, interaction: discord.Interaction,
@@ -596,7 +597,7 @@ class Moderation(commands.Cog):
             embed=success_embed("✅ Nachricht gesendet", f"In {target.mention}: {nachricht[:100]}"),
             ephemeral=True)
 
-    @app_commands.command(name="announce", description="[Admin] Sendet eine Ankündigung in einen Kanal.")
+    @mod.command(name="announce", description="[Admin] Sendet eine Ankündigung in einen Kanal.")
     @app_commands.describe(kanal="Ziel-Kanal", titel="Titel der Ankündigung", inhalt="Text der Ankündigung")
     async def announce(self, interaction: discord.Interaction,
                        kanal: discord.TextChannel, titel: str, inhalt: str):
@@ -625,7 +626,7 @@ class Moderation(commands.Cog):
             embed=success_embed("✅ Ankündigung gesendet", f"Ankündigung in {kanal.mention} veröffentlicht."),
             ephemeral=True)
 
-    @app_commands.command(name="lock", description="[Mod] Sperrt einen Kanal für @everyone.")
+    @mod.command(name="lock", description="[Mod] Sperrt einen Kanal für @everyone.")
     @app_commands.describe(kanal="Zu sperrenden Kanal (Standard: aktueller)")
     @app_commands.checks.has_permissions(manage_channels=True)
     async def lock(self, interaction: discord.Interaction, kanal: discord.TextChannel = None):
@@ -651,7 +652,7 @@ class Moderation(commands.Cog):
         self.bot.dispatch("clan_action", interaction.guild, "mute", interaction.user, interaction.user,
                           f"Kanal gesperrt: {target.name}")
 
-    @app_commands.command(name="unlock", description="[Mod] Entsperrt einen Kanal für @everyone.")
+    @mod.command(name="unlock", description="[Mod] Entsperrt einen Kanal für @everyone.")
     @app_commands.describe(kanal="Zu entsperrenden Kanal (Standard: aktueller)")
     @app_commands.checks.has_permissions(manage_channels=True)
     async def unlock(self, interaction: discord.Interaction, kanal: discord.TextChannel = None):
@@ -675,7 +676,7 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(
             embed=success_embed("🔓 Kanal entsperrt", f"{target.mention} wurde entsperrt."))
 
-    @app_commands.command(name="tempban", description="Bannt einen User temporär vom Server.")
+    @mod.command(name="tempban", description="Bannt einen User temporär vom Server.")
     @app_commands.describe(user="Der User", dauer_stunden="Dauer in Stunden", grund="Grund")
     @app_commands.checks.has_permissions(ban_members=True)
     async def tempban(self, interaction: discord.Interaction, user: discord.Member,
@@ -730,7 +731,7 @@ class Moderation(commands.Cog):
         self.bot.dispatch("clan_action", interaction.guild, "ban", user, interaction.user,
                           grund, f"Tempban: {dauer_stunden}h")
 
-    @app_commands.command(name="unban", description="Entbannt einen User vom Server.")
+    @mod.command(name="unban", description="Entbannt einen User vom Server.")
     @app_commands.describe(user_id="Die User-ID des gebannten Users", grund="Grund für den Unban")
     @app_commands.checks.has_permissions(ban_members=True)
     async def unban(self, interaction: discord.Interaction, user_id: str,
@@ -767,7 +768,7 @@ class Moderation(commands.Cog):
             embed=success_embed(f"✅ {user} wurde entbannt.", f"**Grund:** {grund}"))
         self.bot.dispatch("clan_action", interaction.guild, "unban", user, interaction.user, grund)
 
-    @app_commands.command(name="timeout", description="Setzt ein Discord-Timeout (Stummschaltung).")
+    @mod.command(name="timeout", description="Setzt ein Discord-Timeout (Stummschaltung).")
     @app_commands.describe(user="Der User", minuten="Dauer in Minuten (1–40320)", grund="Grund")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def timeout_cmd(self, interaction: discord.Interaction, user: discord.Member,
@@ -801,7 +802,7 @@ class Moderation(commands.Cog):
         self.bot.dispatch("clan_action", interaction.guild, "mute", user, interaction.user,
                           grund, f"Discord Timeout: {minuten} Min.")
 
-    @app_commands.command(name="untimeout", description="Hebt das Timeout eines Users auf.")
+    @mod.command(name="untimeout", description="Hebt das Timeout eines Users auf.")
     @app_commands.describe(user="Der User", grund="Grund")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def untimeout_cmd(self, interaction: discord.Interaction, user: discord.Member,
@@ -828,7 +829,7 @@ class Moderation(commands.Cog):
             embed=success_embed(f"✅ Timeout aufgehoben", f"**{user}** — Grund: {grund}"))
         self.bot.dispatch("clan_action", interaction.guild, "unmute", user, interaction.user, grund)
 
-    @app_commands.command(name="resetnick", description="[Mod] Setzt den Nickname eines Users zurück.")
+    @mod.command(name="resetnick", description="[Mod] Setzt den Nickname eines Users zurück.")
     @app_commands.describe(user="Das Mitglied")
     @app_commands.checks.has_permissions(manage_nicknames=True)
     async def resetnick(self, interaction: discord.Interaction, user: discord.Member):
@@ -849,7 +850,7 @@ class Moderation(commands.Cog):
             embed=success_embed("✅ Nickname zurückgesetzt", f"Nickname von {user.mention} wurde zurückgesetzt."),
             ephemeral=True)
 
-    @app_commands.command(name="ban", description="Bannt einen User vom Server.")
+    @mod.command(name="ban", description="Bannt einen User vom Server.")
     @app_commands.describe(user="Der zu bannende User", grund="Grund für den Bann")
     @app_commands.checks.has_permissions(ban_members=True)
     async def ban(self, interaction: discord.Interaction, user: discord.Member,
@@ -873,7 +874,7 @@ class Moderation(commands.Cog):
             view=ConfirmActionView(action="ban", target=user, grund=grund, moderator=interaction.user),
             ephemeral=True)
 
-    @app_commands.command(name="kick", description="Kickt einen User vom Server.")
+    @mod.command(name="kick", description="Kickt einen User vom Server.")
     @app_commands.describe(user="Der zu kickende User", grund="Grund für den Kick")
     @app_commands.checks.has_permissions(kick_members=True)
     async def kick(self, interaction: discord.Interaction, user: discord.Member,
@@ -897,7 +898,7 @@ class Moderation(commands.Cog):
             view=ConfirmActionView(action="kick", target=user, grund=grund, moderator=interaction.user),
             ephemeral=True)
 
-    @app_commands.command(name="mute", description="Muted einen User (Text & Voice).")
+    @mod.command(name="mute", description="Muted einen User (Text & Voice).")
     @app_commands.describe(user="Der zu mutende User", dauer_minuten="Dauer in Minuten (0 = permanent)", grund="Grund")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def mute(self, interaction: discord.Interaction, user: discord.Member,
@@ -932,7 +933,7 @@ class Moderation(commands.Cog):
                 return d
             await self.mutes_store.update(mutate)
 
-    @app_commands.command(name="unmute", description="Entfernt den Mute eines Users.")
+    @mod.command(name="unmute", description="Entfernt den Mute eines Users.")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def unmute(self, interaction: discord.Interaction, user: discord.Member):
         if not await check_role_permission(interaction, "moderation"):
@@ -958,7 +959,7 @@ class Moderation(commands.Cog):
         await interaction.response.send_message(embed=success_embed(f"✅ {user} wurde entmutet."))
         self.bot.dispatch("clan_action", interaction.guild, "unmute", user, interaction.user, "Mute aufgehoben")
 
-    @app_commands.command(name="warn", description="Verwarnt einen User.")
+    @mod.command(name="warn", description="Verwarnt einen User.")
     @app_commands.describe(user="Der zu verwarnende User", grund="Grund der Verwarnung")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def warn(self, interaction: discord.Interaction, user: discord.Member, grund: str):
@@ -1022,7 +1023,7 @@ class Moderation(commands.Cog):
             except discord.HTTPException:
                 pass
 
-    @app_commands.command(name="warn-remove", description="Entfernt eine einzelne Verwarnung eines Users.")
+    @mod.command(name="warn-remove", description="Entfernt eine einzelne Verwarnung eines Users.")
     @app_commands.describe(user="Der User", nummer="Nummer der Verwarnung (1-basiert, siehe /warnings)")
     @app_commands.checks.has_permissions(moderate_members=True)
     async def warn_remove(self, interaction: discord.Interaction, user: discord.Member, nummer: int):
@@ -1058,7 +1059,7 @@ class Moderation(commands.Cog):
         self.bot.dispatch("clan_action", interaction.guild, "warn", user, interaction.user,
                           f"Verwarnung #{nummer} entfernt: {removed['grund']}", "Aktion: Warn-Remove")
 
-    @app_commands.command(name="warn-clear", description="Löscht ALLE Verwarnungen eines Users.")
+    @mod.command(name="warn-clear", description="Löscht ALLE Verwarnungen eines Users.")
     @app_commands.describe(user="Der User dessen Verwarnungen gelöscht werden")
     @app_commands.checks.has_permissions(administrator=True)
     async def warn_clear(self, interaction: discord.Interaction, user: discord.Member):
@@ -1083,7 +1084,7 @@ class Moderation(commands.Cog):
         self.bot.dispatch("clan_action", interaction.guild, "warn", user, interaction.user,
                           f"Alle {count_holder['count']} Verwarnungen gelöscht", "Aktion: Warn-Clear")
 
-    @app_commands.command(name="warnings", description="Zeigt alle Verwarnungen eines Users an.")
+    @mod.command(name="warnings", description="Zeigt alle Verwarnungen eines Users an.")
     async def warnings_cmd(self, interaction: discord.Interaction, user: discord.Member):
         if not await check_role_permission(interaction, "moderation"):
             await interaction.response.send_message(

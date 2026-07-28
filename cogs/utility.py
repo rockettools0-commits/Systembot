@@ -85,6 +85,7 @@ def default_membercount() -> dict:
 
 
 class Utility(commands.Cog):
+    util = app_commands.Group(name="util", description="Allgemeine Tools und Community-Helfer.")
     def __init__(self, bot: commands.Bot):
         self.bot              = bot
         self.afk_store        = JSONStore(AFK_PATH,         default_afk())
@@ -165,7 +166,7 @@ class Utility(commands.Cog):
     # /avatar
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="avatar", description="Zeigt den Avatar eines Users in voller Größe.")
+    @util.command(name="avatar", description="Zeigt den Avatar eines Users in voller Größe.")
     @app_commands.describe(user="Der User dessen Avatar angezeigt werden soll")
     async def avatar(self, interaction: discord.Interaction, user: discord.Member = None):
         target = user or interaction.user
@@ -191,7 +192,7 @@ class Utility(commands.Cog):
     # /userinfo
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="userinfo", description="Zeigt detaillierte Informationen über einen User.")
+    @util.command(name="userinfo", description="Zeigt detaillierte Informationen über einen User.")
     @app_commands.describe(user="Der User dessen Infos angezeigt werden sollen")
     async def userinfo(self, interaction: discord.Interaction, user: discord.Member = None):
         target = user or interaction.user
@@ -235,7 +236,7 @@ class Utility(commands.Cog):
     # /roleinfo
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="roleinfo", description="Zeigt Informationen über eine Rolle.")
+    @util.command(name="roleinfo", description="Zeigt Informationen über eine Rolle.")
     @app_commands.describe(rolle="Die Rolle die angezeigt werden soll")
     async def roleinfo(self, interaction: discord.Interaction, rolle: discord.Role):
         perms = []
@@ -273,7 +274,7 @@ class Utility(commands.Cog):
     # /poll
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="poll", description="Erstellt eine Abstimmung mit bis zu 5 Optionen.")
+    @util.command(name="poll", description="Erstellt eine Abstimmung mit bis zu 5 Optionen.")
     @app_commands.describe(
         frage="Die Frage der Abstimmung",
         option1="Option 1", option2="Option 2",
@@ -312,7 +313,7 @@ class Utility(commands.Cog):
     # /remind
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="remind", description="Setzt eine Erinnerung (max. 48 Stunden).")
+    @util.command(name="remind", description="Setzt eine Erinnerung (max. 48 Stunden).")
     @app_commands.describe(
         stunden="Stunden (0–48)",
         minuten="Minuten zusätzlich (0–59)",
@@ -369,7 +370,7 @@ class Utility(commands.Cog):
     # /snipe  — zuletzt gelöschte Nachricht
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="snipe", description="Zeigt die zuletzt gelöschte Nachricht in diesem Kanal.")
+    @util.command(name="snipe", description="Zeigt die zuletzt gelöschte Nachricht in diesem Kanal.")
     async def snipe(self, interaction: discord.Interaction):
         channel_cache = self._snipe.get(interaction.guild_id, {})
         data = channel_cache.get(interaction.channel_id)
@@ -407,7 +408,7 @@ class Utility(commands.Cog):
     # /clear
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="clear", description="Löscht eine Anzahl Nachrichten im aktuellen Kanal.")
+    @util.command(name="clear", description="Löscht eine Anzahl Nachrichten im aktuellen Kanal.")
     @app_commands.describe(
         anzahl="Anzahl der zu löschenden Nachrichten (1–100)",
         user="Optional: Nur Nachrichten dieses Users löschen",
@@ -453,7 +454,7 @@ class Utility(commands.Cog):
     # /slowmode
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="slowmode", description="Setzt den Slowmode im aktuellen Kanal.")
+    @util.command(name="slowmode", description="Setzt den Slowmode im aktuellen Kanal.")
     @app_commands.describe(sekunden="Slowmode in Sekunden (0 = deaktivieren, max. 21600)")
     async def slowmode(
         self,
@@ -495,7 +496,7 @@ class Utility(commands.Cog):
     # /nick
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="nick", description="Ändert den Nickname eines Mitglieds.")
+    @util.command(name="nick", description="Ändert den Nickname eines Mitglieds.")
     @app_commands.describe(
         user="Das Mitglied",
         nickname="Neuer Nickname (leer lassen zum Zurücksetzen)",
@@ -538,7 +539,7 @@ class Utility(commands.Cog):
     # /coinflip
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="coinflip", description="Wirft eine Münze — Kopf oder Zahl?")
+    @util.command(name="coinflip", description="Wirft eine Münze — Kopf oder Zahl?")
     async def coinflip(self, interaction: discord.Interaction):
         result = random.choice(["Kopf", "Zahl"])
         embed  = gold_embed(
@@ -552,7 +553,7 @@ class Utility(commands.Cog):
     # /8ball
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="8ball", description="Stell der magischen 8-Ball eine Frage.")
+    @util.command(name="8ball", description="Stell der magischen 8-Ball eine Frage.")
     @app_commands.describe(frage="Deine Ja/Nein-Frage")
     async def eightball(self, interaction: discord.Interaction, frage: str):
         answer = random.choice(EIGHTBALL_ANSWERS)
@@ -570,7 +571,7 @@ class Utility(commands.Cog):
     # /afk
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="afk", description="Setzt dich als AFK. Wirst du erwähnt, wird der Absender informiert.")
+    @util.command(name="afk", description="Setzt dich als AFK. Wirst du erwähnt, wird der Absender informiert.")
     @app_commands.describe(grund="Grund für dein AFK (optional)")
     async def afk(self, interaction: discord.Interaction, grund: str = "AFK"):
         guild_id = str(interaction.guild_id)
@@ -649,7 +650,7 @@ class Utility(commands.Cog):
     # /membercount  — Embed-Snapshot
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(name="membercount", description="Zeigt die aktuelle Mitgliederzahl des Servers.")
+    @util.command(name="membercount", description="Zeigt die aktuelle Mitgliederzahl des Servers.")
     async def membercount(self, interaction: discord.Interaction):
         guild   = interaction.guild
         total   = guild.member_count
@@ -688,7 +689,7 @@ class Utility(commands.Cog):
     # /membercount-setup  — Zähler-Kanäle erstellen
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(
+    @util.command(
         name="membercount-setup",
         description="Erstellt automatisch aktualisierte Mitglieder-Zähler als Voice-Kanäle.",
     )
@@ -816,7 +817,7 @@ class Utility(commands.Cog):
     # /membercount-remove  — Zähler-Kanäle & Config löschen
     # ─────────────────────────────────────────────────────────────────────────
 
-    @app_commands.command(
+    @util.command(
         name="membercount-remove",
         description="Entfernt alle Mitglieder-Zähler-Kanäle und die Konfiguration.",
     )
