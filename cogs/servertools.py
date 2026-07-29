@@ -1,7 +1,10 @@
 """
-Server-Tools: /serverinfo, /botinfo, /backup (Admin).
+Server-Tools: /server-info, /botinfo, /server-backup (Admin).
 Gibt detaillierte Infos über den Server oder Bot aus,
 und exportiert alle JSON-Datendateien als ZIP-Archiv.
+
+Hinweis: /serverinfo und /backup existieren bereits im /owner-Panel (Owner-Only).
+Diese Befehle sind für alle Admins zugänglich und heißen daher /server-info und /server-backup.
 """
 
 import datetime
@@ -34,9 +37,9 @@ class ServerTools(commands.Cog):
         self.bot = bot
         self._start = time.monotonic()
 
-    # ── /serverinfo ───────────────────────────────────────────────────────────
+    # ── /server-info ──────────────────────────────────────────────────────────
 
-    @app_commands.command(name="serverinfo", description="Zeigt detaillierte Informationen über den Server.")
+    @app_commands.command(name="server-info", description="Zeigt detaillierte Informationen über den Server.")
     async def serverinfo(self, interaction: discord.Interaction):
         g = interaction.guild
 
@@ -106,10 +109,10 @@ class ServerTools(commands.Cog):
         embed.set_footer(text=get_footer_text(interaction))
         await interaction.response.send_message(embed=embed)
 
-    # ── /backup ───────────────────────────────────────────────────────────────
+    # ── /server-backup ────────────────────────────────────────────────────────
 
     @app_commands.command(
-        name="backup",
+        name="server-backup",
         description="Exportiert alle Bot-Datendateien als ZIP-Archiv (nur Admins).",
     )
     @app_commands.checks.has_permissions(administrator=True)
